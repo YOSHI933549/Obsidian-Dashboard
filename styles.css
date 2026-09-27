@@ -13,8 +13,12 @@
   --pd-hand: "Yomogi", "Klee One", "Hiragino Maru Gothic ProN", cursive;
   --pd-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .33 0 0 0 0 .26 0 0 0 .18 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 
+}
+
+/* Obsidian paints .view-content with --background-primary; this surface must win over it. */
+.pencil-dashboard-container .view-content.pd-surface {
   padding: 0 !important;
-  background: var(--pd-noise), var(--pd-paper);
+  background: var(--pd-noise), var(--pd-paper) !important;
   overflow-y: auto;
 }
 
@@ -31,7 +35,8 @@
   box-sizing: border-box;
 }
 
-.pd-root button {
+/* :where keeps this reset at zero specificity so component padding (.pd-fav, .pd-new-note, …) still applies */
+:where(.pd-root) button {
   font: inherit;
   color: inherit;
   background: none;
@@ -154,6 +159,7 @@
   padding: 0 14px;
   font-size: 14px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .pd-quick {
@@ -541,5 +547,13 @@
 
   .pd-favs {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pd-quick {
+    gap: 6px;
+  }
+
+  .pd-quick button {
+    width: 30px;
   }
 }

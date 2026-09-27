@@ -83,9 +83,9 @@ export class DashboardView extends ItemView {
   private async render(): Promise<void> {
     this.todos = await collectTodos(this.app, TODO_LIMIT);
 
-    const root = this.contentEl;
-    root.empty();
-    root.addClass("pd-root");
+    this.contentEl.empty();
+    this.contentEl.addClass("pd-surface");
+    const root = this.contentEl.createDiv({ cls: "pd-root" });
 
     root.createDiv({ cls: "pd-tabs" }, (tabs) => {
       [1, 2, 3].forEach((n) => {
@@ -123,7 +123,10 @@ export class DashboardView extends ItemView {
     card.empty();
     card.createDiv({ cls: "pd-greet", text: greeting });
     card.createDiv({ cls: "pd-time pd-grain", text: now.format("HH:mm") });
-    card.createDiv({ cls: "pd-date", text: now.format("M月D日dddd") });
+    card.createDiv({
+      cls: "pd-date",
+      text: now.toDate().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "long" }),
+    });
   }
 
   private renderHero(root: HTMLElement): void {

@@ -205,9 +205,9 @@ var DashboardView = class extends import_obsidian2.ItemView {
   }
   async render() {
     this.todos = await collectTodos(this.app, TODO_LIMIT);
-    const root = this.contentEl;
-    root.empty();
-    root.addClass("pd-root");
+    this.contentEl.empty();
+    this.contentEl.addClass("pd-surface");
+    const root = this.contentEl.createDiv({ cls: "pd-root" });
     root.createDiv({ cls: "pd-tabs" }, (tabs) => {
       [1, 2, 3].forEach((n) => {
         const tab = tabs.createEl("button", { cls: "pd-tab pd-sk pd-shade", text: String(n) });
@@ -241,7 +241,10 @@ var DashboardView = class extends import_obsidian2.ItemView {
     card.empty();
     card.createDiv({ cls: "pd-greet", text: greeting });
     card.createDiv({ cls: "pd-time pd-grain", text: now.format("HH:mm") });
-    card.createDiv({ cls: "pd-date", text: now.format("M\u6708D\u65E5dddd") });
+    card.createDiv({
+      cls: "pd-date",
+      text: now.toDate().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "long" })
+    });
   }
   renderHero(root) {
     const hero = root.createDiv({ cls: "pd-hero" });
