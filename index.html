@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Home</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Yomogi&family=Klee+One:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #ece6d8;
+        --sheet: #f8f5ee;
+        --graphite: #45403a;
+        --graphite-soft: rgba(69, 64, 58, 0.6);
+        --graphite-faint: rgba(69, 64, 58, 0.3);
+        --brown: 110, 80, 52;
+        --red: #c4553b;
+        --ochre: #c0842c;
+        --purple: #7b62ad;
+        --rule: rgba(91, 120, 168, 0.22);
+        --hand: "Yomogi", "Klee One", "Hiragino Maru Gothic ProN", cursive;
+        --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .33 0 0 0 0 .26 0 0 0 .18 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--paper);
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px 16px 48px;
+        font-family: var(--hand);
+        color: var(--graphite);
+        background: var(--noise), var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+
+      button {
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+      }
+
+      .defs {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+
+      .page {
+        max-width: 1060px;
+        margin: 0 auto;
+      }
+
+      /* 鉛筆の線: 本体の線 + 少しずれた薄い二度書き */
+      .sk {
+        position: relative;
+      }
+
+      .sk::before,
+      .sk::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border: 1.4px solid var(--line, var(--graphite));
+        border-radius: var(--r, 5px);
+        filter: url(#pencil);
+      }
+
+      .sk::after {
+        inset: 1.5px -1px -1px 1.5px;
+        border-width: 1px;
+        opacity: 0.4;
+      }
+
+      .shade:hover,
+      .shade:focus-visible {
+        outline: none;
+        background: repeating-linear-gradient(
+          45deg,
+          rgba(69, 64, 58, 0.13) 0 1px,
+          transparent 1px 5px
+        );
+      }
+
+      .ico {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        filter: url(#pencil-line);
+        flex-shrink: 0;
+      }
+
+      .grain {
+        filter: url(#grain);
+      }
+
+      /* ダッシュボード切り替え */
+      .tabs {
+        display: flex;
+        gap: 8px;
+      }
+
+      .tab {
+        width: 28px;
+        height: 28px;
+        font-size: 15px;
+      }
+
+      .tab.active {
+        font-weight: 700;
+        --line: var(--red);
+        color: var(--red);
+        background: repeating-linear-gradient(45deg, rgba(196, 85, 59, 0.22) 0 1px, transparent 1px 4px);
+      }
+
+      /* ロゴ + 検索 */
+      .hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        margin: 22px 0 36px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: "Klee One", var(--hand);
+        font-weight: 600;
+        font-size: 42px;
+        letter-spacing: 0.01em;
+      }
+
+      .brand svg {
+        width: 40px;
+        height: 46px;
+        filter: url(#pencil-line);
+      }
+
+      .search-row {
+        display: flex;
+        gap: 10px;
+        width: min(490px, 100%);
+      }
+
+      .search {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        height: 40px;
+        background: rgba(255, 255, 255, 0.35);
+        cursor: text;
+      }
+
+      .search input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font-size: 16px;
+      }
+
+      .search input::placeholder {
+        color: var(--graphite-soft);
+      }
+
+      .new-note {
+        height: 40px;
+        padding: 0 14px;
+        font-size: 15px;
+        white-space: nowrap;
+      }
+
+      .quick {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        width: min(490px, 100%);
+        margin-top: -8px;
+      }
+
+      .quick button {
+        width: 34px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        --r: 6px;
+      }
+
+      /* 3カラム */
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1.12fr 1.2fr;
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        min-width: 0;
+      }
+
+      .card {
+        --line: var(--graphite-faint);
+        --r: 4px;
+        background: var(--noise), var(--sheet);
+        border-radius: 4px;
+        box-shadow:
+          0 1px 1px rgba(60, 45, 30, 0.08),
+          0 12px 20px -14px rgba(60, 45, 30, 0.4);
+        padding: 16px 18px 18px;
+        min-width: 0;
+      }
+
+      .card h2 {
+        display: inline-block;
+        margin: 0 0 14px;
+        font-size: 17px;
+        font-weight: 400;
+        letter-spacing: 0.05em;
+      }
+
+      .card h2::after {
+        content: "";
+        display: block;
+        width: calc(100% + 16px);
+        height: 2.4px;
+        margin-top: 3px;
+        border-radius: 2px;
+        background: var(--graphite);
+        opacity: 0.85;
+        transform: rotate(-0.8deg);
+        filter: url(#pencil-line);
+      }
+
+      /* 時計 */
+      .clock {
+        text-align: center;
+        padding: 18px;
+      }
+
+      .clock .greet {
+        font-size: 14px;
+        color: var(--graphite-soft);
+      }
+
+      .clock .time {
+        font-size: 50px;
+        line-height: 1.05;
+        margin: 2px 0 4px;
+        letter-spacing: 0.02em;
+      }
+
+      .clock .date {
+        font-size: 13px;
+      }
+
+      /* カレンダー */
+      .cal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .cal-head h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 400;
+      }
+
+      .cal-head button {
+        width: 26px;
+        height: 26px;
+        font-size: 16px;
+        line-height: 1;
+      }
+
+      .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        row-gap: 4px;
+        text-align: center;
+      }
+
+      .wd {
+        font-size: 12px;
+        color: var(--graphite-soft);
+        padding: 4px 0 6px;
+      }
+
+      .day {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 0 4px;
+        font-size: 14px;
+        border-radius: 6px;
+      }
+
+      .day.out {
+        color: rgba(69, 64, 58, 0.35);
+      }
+
+      .day .dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--graphite-soft);
+        visibility: hidden;
+      }
+
+      .day.has-note .dot {
+        visibility: visible;
+      }
+
+      .day .n {
+        position: relative;
+        line-height: 1.2;
+      }
+
+      .day.today .n {
+        font-weight: 700;
+      }
+
+      .day.today .n::before {
+        content: "";
+        position: absolute;
+        inset: -6px -9px -5px -9px;
+        border: 1.6px solid var(--red);
+        border-radius: 50%;
+        transform: rotate(-9deg);
+        filter: url(#pencil);
+      }
+
+      /* アクティビティ */
+      .heat {
+        display: grid;
+        grid-template-rows: repeat(7, auto);
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        gap: 3px;
+        filter: url(#pencil);
+      }
+
+      .cell {
+        aspect-ratio: 1;
+        border: 1px solid rgba(69, 64, 58, 0.28);
+        border-radius: 2px;
+      }
+
+      .l1 {
+        background: repeating-linear-gradient(45deg, rgba(var(--brown), 0.45) 0 1px, transparent 1px 4px);
+      }
+
+      .l2 {
+        background: repeating-linear-gradient(45deg, rgba(var(--brown), 0.6) 0 1.2px, transparent 1.2px 3px);
+      }
+
+      .l3 {
+        background:
+          repeating-linear-gradient(45deg, rgba(var(--brown), 0.7) 0 1.2px, transparent 1.2px 3px),
+          repeating-linear-gradient(-45deg, rgba(var(--brown), 0.55) 0 1px, transparent 1px 3.5px);
+      }
+
+      .l4 {
+        background:
+          repeating-linear-gradient(45deg, rgba(var(--brown), 0.9) 0 1.4px, transparent 1.4px 2.6px),
+          repeating-linear-gradient(-45deg, rgba(var(--brown), 0.8) 0 1.4px, transparent 1.4px 2.6px);
+      }
+
+      .legend {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--graphite-soft);
+      }
+
+      .legend .cell {
+        width: 11px;
+      }
+
+      .legend .swatches {
+        display: flex;
+        gap: 3px;
+        filter: url(#pencil);
+      }
+
+      /* お気に入り */
+      .favs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .fav {
+        --line: var(--graphite-soft);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 9px 10px 10px;
+        font-size: 14px;
+        text-align: left;
+        min-width: 0;
+      }
+
+      .fav .ico {
+        width: 14px;
+        height: 14px;
+        color: var(--graphite-soft);
+      }
+
+      .fav span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+      }
+
+      /* Todo: 罫線ノート */
+      .todo {
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 0;
+        overflow: hidden;
+      }
+
+      .todo-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+      }
+
+      .sort {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        padding: 0 10px;
+        font-size: 13px;
+        --line: var(--graphite-soft);
+      }
+
+      .sort .ico {
+        width: 13px;
+        height: 13px;
+      }
+
+      .todo-list {
+        --lh: 40px;
+        flex: 1;
+        min-height: calc(var(--lh) * 10);
+        list-style: none;
+        margin: 0 -18px;
+        padding: 0 18px 0 0;
+        background:
+          linear-gradient(90deg, transparent 30px, rgba(196, 85, 59, 0.45) 30px 31.5px, transparent 31.5px),
+          repeating-linear-gradient(
+            to bottom,
+            transparent 0 calc(var(--lh) - 1px),
+            var(--rule) calc(var(--lh) - 1px) var(--lh)
+          );
+      }
+
+      .todo-list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: var(--lh);
+        padding-left: 42px;
+      }
+
+      .check {
+        --r: 3px;
+        width: 15px;
+        height: 15px;
+        flex-shrink: 0;
+      }
+
+      .check svg {
+        position: absolute;
+        left: 1px;
+        top: -6px;
+        width: 20px;
+        height: 20px;
+        fill: none;
+        stroke: var(--graphite);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        filter: url(#pencil-line);
+        visibility: hidden;
+      }
+
+      .done .check svg {
+        visibility: visible;
+      }
+
+      .todo-text {
+        flex: 1;
+        min-width: 0;
+        font-size: 14.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .done .todo-text {
+        color: var(--graphite-soft);
+        text-decoration: line-through 1.4px var(--graphite-soft);
+      }
+
+      .todo-text a {
+        color: #a8532e;
+        text-decoration: underline 1px rgba(168, 83, 46, 0.6);
+        text-underline-offset: 3px;
+      }
+
+      .tag {
+        flex-shrink: 0;
+        font-size: 12px;
+        padding: 1px 9px;
+        --r: 50%;
+      }
+
+      .tag.high {
+        color: var(--red);
+        --line: var(--red);
+      }
+
+      .tag.medium {
+        color: var(--ochre);
+        --line: var(--ochre);
+      }
+
+      .due {
+        flex-shrink: 0;
+        font-size: 12.5px;
+        color: var(--graphite-soft);
+      }
+
+      @media (max-width: 960px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .todo {
+          grid-column: 1 / -1;
+        }
+
+        .todo-list {
+          min-height: 0;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .brand {
+          font-size: 34px;
+        }
+
+        .favs {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .quick {
+          gap: 7px;
+        }
+
+        .quick button {
+          width: 31px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg class="defs" aria-hidden="true">
+      <defs>
+        <filter id="pencil" x="-8%" y="-8%" width="116%" height="116%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="warp" />
+          <feDisplacementMap in="SourceGraphic" in2="warp" scale="3" xChannelSelector="R" yChannelSelector="G" result="wobbly" />
+          <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="9" result="noise" />
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2.2 0 0 0 1.75" result="mask" />
+          <feComposite in="wobbly" in2="mask" operator="in" />
+        </filter>
+        <filter id="pencil-line" x="-10%" y="-150%" width="120%" height="400%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="7" result="warp" />
+          <feDisplacementMap in="SourceGraphic" in2="warp" scale="2" xChannelSelector="R" yChannelSelector="G" result="wobbly" />
+          <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="2" result="noise" />
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2 0 0 0 1.75" result="mask" />
+          <feComposite in="wobbly" in2="mask" operator="in" />
+        </filter>
+        <filter id="grain">
+          <feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="1" seed="5" result="noise" />
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1.6 0 0 0 1.65" result="mask" />
+          <feComposite in="SourceGraphic" in2="mask" operator="in" />
+        </filter>
+        <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(38)">
+          <line x1="0" y1="0" x2="0" y2="4" stroke="#7b62ad" stroke-width="1.4" opacity="0.65" />
+        </pattern>
+      </defs>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5h-7L10 5H4.5A1.5 1.5 0 0 0 3 6.5z" /></symbol>
+      <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" /><path d="m14.5 5.5 3 3" /></symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="8" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="15" width="7" height="6" rx="1" /></symbol>
+      <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8" /><path d="M4 5.5v13c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-13M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8" /></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="m21 16-5-5L5 20" /></symbol>
+      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" /></symbol>
+      <symbol id="i-file-down" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M12 11v6m-2.5-2.5L12 17l2.5-2.5" /></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></symbol>
+      <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16M4 7l3-3 3 3M17 20V4m-3 13 3 3 3-3" /></symbol>
+    </svg>
+
+    <div class="page">
+      <nav class="tabs" aria-label="ダッシュボード">
+        <button class="tab sk shade active" aria-pressed="true">1</button>
+        <button class="tab sk shade" aria-pressed="false">2</button>
+        <button class="tab sk shade" aria-pressed="false">3</button>
+        <button class="tab sk shade" aria-label="ダッシュボードを追加"></button>
+      </nav>
+
+      <header class="hero">
+        <div class="brand">
+          <svg viewBox="0 0 40 46" aria-hidden="true">
+            <path d="M21 2 34 12l4 20-12 12-14-5L4 20z" fill="url(#hatch)" stroke="#7b62ad" stroke-width="1.7" stroke-linejoin="round" />
+            <path d="M21 2 17 23l9 21M17 23 4 20M17 23l21 9" fill="none" stroke="#7b62ad" stroke-width="1.1" stroke-linecap="round" opacity="0.75" />
+          </svg>
+          <span class="grain">Obsidian</span>
+        </div>
+        <div class="search-row">
+          <label class="search sk">
+            <svg class="ico"><use href="#i-search" /></svg>
+            <input type="text" placeholder="Search or command" aria-label="Search or command" />
+          </label>
+          <button class="new-note sk shade">＋ New note</button>
+        </div>
+        <div class="quick">
+          <button class="sk shade" title="Files"><svg class="ico"><use href="#i-folder" /></svg></button>
+          <button class="sk shade" title="Notes"><svg class="ico"><use href="#i-file-text" /></svg></button>
+          <button class="sk shade" title="Drawings"><svg class="ico"><use href="#i-pen" /></svg></button>
+          <button class="sk shade" title="Canvas"><svg class="ico"><use href="#i-layout" /></svg></button>
+          <button class="sk shade" title="Bases"><svg class="ico"><use href="#i-db" /></svg></button>
+          <button class="sk shade" title="Images"><svg class="ico"><use href="#i-image" /></svg></button>
+          <button class="sk shade" title="Audio"><svg class="ico"><use href="#i-music" /></svg></button>
+          <button class="sk shade" title="PDF"><svg class="ico"><use href="#i-file-down" /></svg></button>
+          <button class="sk shade" title="Other files"><svg class="ico"><use href="#i-file" /></svg></button>
+        </div>
+      </header>
+
+      <main class="grid">
+        <div class="col">
+          <section class="card sk clock">
+            <div class="greet" id="greet">Good morning</div>
+            <div class="time grain" id="time">11:49</div>
+            <div class="date" id="date">9月27日日曜日</div>
+          </section>
+
+          <section class="card sk">
+            <h2>Calendar</h2>
+            <div class="cal-head">
+              <button class="sk shade" id="prev" aria-label="前の月">‹</button>
+              <h3 id="cal-title">September 2026</h3>
+              <button class="sk shade" id="next" aria-label="次の月">›</button>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+          </section>
+        </div>
+
+        <div class="col">
+          <section class="card sk">
+            <h2>Activity</h2>
+            <div class="heat" id="heat"></div>
+            <div class="legend">
+              Less
+              <span class="swatches">
+                <i class="cell"></i><i class="cell l1"></i><i class="cell l2"></i><i class="cell l3"></i><i class="cell l4"></i>
+              </span>
+              More
+            </div>
+          </section>
+
+          <section class="card sk">
+            <h2>Favorite</h2>
+            <div class="favs" id="favs"></div>
+          </section>
+        </div>
+
+        <section class="card sk todo">
+          <div class="todo-head">
+            <h2>Todo</h2>
+            <button class="sort sk shade" id="sort">
+              <svg class="ico"><use href="#i-sort" /></svg><span id="sort-label">Priority</span>
+            </button>
+          </div>
+          <ul class="todo-list" id="todo-list"></ul>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const SVG_NS = "http://www.w3.org/2000/svg";
+
+      function icon(id) {
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("class", "ico");
+        const use = document.createElementNS(SVG_NS, "use");
+        use.setAttribute("href", `#${id}`);
+        svg.append(use);
+        return svg;
+      }
+
+      function tick() {
+        const now = new Date();
+        const h = now.getHours();
+        document.getElementById("greet").textContent =
+          h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+        document.getElementById("time").textContent =
+          `${String(h).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        document.getElementById("date").textContent = now.toLocaleDateString("ja-JP", {
+          month: "long",
+          day: "numeric",
+          weekday: "long",
+        });
+      }
+
+      const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      let view = new Date();
+      view.setDate(1);
+
+      function renderCalendar() {
+        const y = view.getFullYear();
+        const m = view.getMonth();
+        document.getElementById("cal-title").textContent = `${MONTHS[m]} ${y}`;
+
+        const grid = document.getElementById("cal-grid");
+        grid.replaceChildren();
+        for (const w of ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]) {
+          const el = document.createElement("div");
+          el.className = "wd";
+          el.textContent = w;
+          grid.append(el);
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const offset = (new Date(y, m, 1).getDay() + 6) % 7;
+        const daysInMonth = new Date(y, m + 1, 0).getDate();
+        const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
+
+        for (let i = 0; i < cells; i++) {
+          const d = new Date(y, m, 1 - offset + i);
+          const day = document.createElement("button");
+          day.className = "day shade";
+          if (d.getMonth() !== m) day.classList.add("out");
+          if (d <= today) day.classList.add("has-note");
+          if (d.getTime() === today.getTime()) day.classList.add("today");
+          const n = document.createElement("span");
+          n.className = "n";
+          n.textContent = d.getDate();
+          const dot = document.createElement("i");
+          dot.className = "dot";
+          day.append(n, dot);
+          grid.append(day);
+        }
+      }
+
+      function renderHeat() {
+        let seed = 20260927;
+        const rand = () => {
+          seed = (seed + 0x6d2b79f5) | 0;
+          let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        const heat = document.getElementById("heat");
+        const cols = 20;
+        for (let c = 0; c < cols; c++) {
+          for (let r = 0; r < 7; r++) {
+            const bias = c / cols;
+            const v = rand() + bias * 0.35;
+            const level = v > 1.1 ? 4 : v > 0.95 ? 3 : v > 0.78 ? 2 : v > 0.55 ? 1 : 0;
+            const cell = document.createElement("i");
+            cell.className = level ? `cell l${level}` : "cell";
+            heat.append(cell);
+          }
+        }
+      }
+
+      function renderFavs() {
+        const favs = [
+          ["悩みごと", "i-db"], ["観察日記", "i-db"], ["PDCA", "i-db"],
+          ["New", "i-db"], ["Input", "i-db"], ["Active", "i-db"],
+          ["Wiki", "i-db"], ["Skills", "i-db"], ["MAP.smm", "i-db"],
+          ["ABOUT", "i-file-text"], ["BIBLE", "i-file-text"], ["RULES", "i-file-text"],
+        ];
+        const box = document.getElementById("favs");
+        for (const [name, ico] of favs) {
+          const b = document.createElement("button");
+          b.className = "fav sk shade";
+          const label = document.createElement("span");
+          label.textContent = name;
+          b.append(icon(ico), label);
+          box.append(b);
+        }
+      }
+
+      const todos = [
+        { parts: ["部下としてのAI｜第5章から読む"], tag: "high", rank: 0 },
+        { parts: ["授業プリント生成｜判断軸・型をまとめる"], tag: "high", rank: 0 },
+        { parts: ["毎日0:00前就寝、23:00就寝準備"], tag: "high", rank: 0 },
+        { parts: [{ link: "Opusで動画作成" }], tag: "medium", rank: 1 },
+        { parts: [{ link: "資産運用_PDCA" }, "検証"], due: "Tomorrow", dueRank: 1, rank: 2 },
+        { parts: [{ link: "教育_PDCA" }, "検証"], due: "Tuesday", dueRank: 2, rank: 2 },
+      ];
+      let sortBy = "priority";
+
+      function renderTodos() {
+        const list = document.getElementById("todo-list");
+        list.replaceChildren();
+        const key = (t) => (sortBy === "priority" ? t.rank : t.dueRank ?? 99);
+        const sorted = todos.map((t, i) => [t, i]).sort((a, b) => key(a[0]) - key(b[0]) || a[1] - b[1]);
+
+        for (const [t] of sorted) {
+          const li = document.createElement("li");
+          if (t.done) li.classList.add("done");
+
+          const check = document.createElement("button");
+          check.className = "check sk shade";
+          check.setAttribute("role", "checkbox");
+          check.setAttribute("aria-checked", String(!!t.done));
+          check.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11l4.5 5L18 2" /></svg>';
+          check.addEventListener("click", () => {
+            t.done = !t.done;
+            renderTodos();
+          });
+
+          const text = document.createElement("span");
+          text.className = "todo-text";
+          for (const p of t.parts) {
+            if (typeof p === "string") {
+              text.append(p);
+            } else {
+              const a = document.createElement("a");
+              a.href = "#";
+              a.textContent = p.link;
+              text.append(a);
+            }
+          }
+
+          li.append(check, text);
+          if (t.tag) {
+            const tag = document.createElement("span");
+            tag.className = `tag sk ${t.tag}`;
+            tag.textContent = t.tag === "high" ? "High" : "Medium";
+            li.append(tag);
+          } else if (t.due) {
+            const due = document.createElement("span");
+            due.className = "due";
+            due.textContent = t.due;
+            li.append(due);
+          }
+          list.append(li);
+        }
+      }
+
+      document.getElementById("prev").addEventListener("click", () => {
+        view.setMonth(view.getMonth() - 1);
+        renderCalendar();
+      });
+      document.getElementById("next").addEventListener("click", () => {
+        view.setMonth(view.getMonth() + 1);
+        renderCalendar();
+      });
+      document.getElementById("sort").addEventListener("click", () => {
+        sortBy = sortBy === "priority" ? "due" : "priority";
+        document.getElementById("sort-label").textContent = sortBy === "priority" ? "Priority" : "Due";
+        renderTodos();
+      });
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((t) => {
+            t.classList.toggle("active", t === tab);
+            t.setAttribute("aria-pressed", String(t === tab));
+          });
+        });
+      });
+
+      tick();
+      setInterval(tick, 15000);
+      renderCalendar();
+      renderHeat();
+      renderFavs();
+      renderTodos();
+    </script>
+  </body>
+</html>
