@@ -533,6 +533,19 @@
   color: var(--pd-graphite-faint);
 }
 
+/* Obsidian and themes paint hovered/focused text inputs (dark fill, glow); the Todo line has to stay plain paper. */
+.pencil-dashboard-container .pd-todo-add input.pd-todo-input,
+.pencil-dashboard-container .pd-todo-add input.pd-todo-input:hover,
+.pencil-dashboard-container .pd-todo-add input.pd-todo-input:focus,
+.pencil-dashboard-container .pd-todo-add input.pd-todo-input:focus-visible,
+.pencil-dashboard-container .pd-todo-add input.pd-todo-input:active {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  color: var(--pd-graphite) !important;
+}
+
 .pd-todo-opt {
   --pd-line: var(--pd-graphite-faint);
   color: var(--pd-graphite-soft);
