@@ -1,0 +1,545 @@
+@import url("https://fonts.googleapis.com/css2?family=Yomogi&family=Klee+One:wght@400;600&display=swap");
+
+.pencil-dashboard-container {
+  --pd-paper: #ece6d8;
+  --pd-sheet: #f8f5ee;
+  --pd-graphite: #45403a;
+  --pd-graphite-soft: rgba(69, 64, 58, 0.6);
+  --pd-graphite-faint: rgba(69, 64, 58, 0.3);
+  --pd-brown: 110, 80, 52;
+  --pd-red: #c4553b;
+  --pd-ochre: #c0842c;
+  --pd-rule: rgba(91, 120, 168, 0.22);
+  --pd-hand: "Yomogi", "Klee One", "Hiragino Maru Gothic ProN", cursive;
+  --pd-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .33 0 0 0 0 .26 0 0 0 .18 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+
+  padding: 0 !important;
+  background: var(--pd-noise), var(--pd-paper);
+  overflow-y: auto;
+}
+
+.pd-root {
+  font-family: var(--pd-hand);
+  color: var(--pd-graphite);
+  -webkit-font-smoothing: antialiased;
+  padding: 24px 20px 40px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.pd-root * {
+  box-sizing: border-box;
+}
+
+.pd-root button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Hand-drawn border: real stroke + a slightly offset faint second pass */
+.pd-sk {
+  position: relative;
+}
+
+.pd-sk::before,
+.pd-sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1.4px solid var(--pd-line, var(--pd-graphite));
+  border-radius: var(--pd-r, 5px);
+  filter: url(#pd-pencil);
+}
+
+.pd-sk::after {
+  inset: 1.5px -1px -1px 1.5px;
+  border-width: 1px;
+  opacity: 0.4;
+}
+
+.pd-shade:hover,
+.pd-shade:focus-visible {
+  outline: none;
+  background: repeating-linear-gradient(45deg, rgba(69, 64, 58, 0.13) 0 1px, transparent 1px 5px);
+}
+
+.pd-ico {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#pd-pencil-line);
+  flex-shrink: 0;
+}
+
+.pd-grain {
+  filter: url(#pd-grain);
+}
+
+.pd-muted {
+  color: var(--pd-graphite-soft);
+  font-size: 13px;
+}
+
+/* Dashboard tabs */
+.pd-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.pd-tab {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+}
+
+.pd-tab.active {
+  font-weight: 700;
+  --pd-line: var(--pd-red);
+  color: var(--pd-red);
+  background: repeating-linear-gradient(45deg, rgba(196, 85, 59, 0.22) 0 1px, transparent 1px 4px);
+}
+
+/* Logo + search */
+.pd-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  margin: 20px 0 32px;
+}
+
+.pd-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "Klee One", var(--pd-hand);
+  font-weight: 600;
+  font-size: 36px;
+}
+
+.pd-search-row {
+  display: flex;
+  gap: 10px;
+  width: min(460px, 100%);
+}
+
+.pd-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.pd-search-placeholder {
+  font-size: 15px;
+  color: var(--pd-graphite-soft);
+}
+
+.pd-new-note {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.pd-quick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: min(460px, 100%);
+}
+
+.pd-quick button {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  --pd-r: 6px;
+}
+
+/* Grid */
+.pd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr 1.2fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.pd-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pd-card {
+  --pd-line: var(--pd-graphite-faint);
+  --pd-r: 4px;
+  background: var(--pd-noise), var(--pd-sheet);
+  border-radius: 4px;
+  box-shadow: 0 1px 1px rgba(60, 45, 30, 0.08), 0 10px 18px -14px rgba(60, 45, 30, 0.4);
+  padding: 14px 16px 16px;
+  min-width: 0;
+}
+
+.pd-card h2 {
+  display: inline-block;
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.pd-card h2::after {
+  content: "";
+  display: block;
+  width: calc(100% + 16px);
+  height: 2.2px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--pd-graphite);
+  opacity: 0.85;
+  transform: rotate(-0.8deg);
+  filter: url(#pd-pencil-line);
+}
+
+/* Clock */
+.pd-clock {
+  text-align: center;
+  padding: 16px;
+}
+
+.pd-greet {
+  font-size: 13px;
+  color: var(--pd-graphite-soft);
+}
+
+.pd-time {
+  font-size: 44px;
+  line-height: 1.05;
+  margin: 2px 0 4px;
+}
+
+.pd-date {
+  font-size: 12px;
+}
+
+/* Calendar */
+.pd-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pd-cal-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.pd-cal-head button {
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pd-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 3px;
+  text-align: center;
+}
+
+.pd-wd {
+  font-size: 11px;
+  color: var(--pd-graphite-soft);
+  padding: 3px 0 5px;
+}
+
+.pd-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 0 3px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.pd-day.out {
+  color: rgba(69, 64, 58, 0.35);
+}
+
+.pd-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--pd-graphite-soft);
+  visibility: hidden;
+}
+
+.pd-day.has-note .pd-dot {
+  visibility: visible;
+}
+
+.pd-n {
+  position: relative;
+  line-height: 1.2;
+}
+
+.pd-day.today .pd-n {
+  font-weight: 700;
+}
+
+.pd-day.today .pd-n::before {
+  content: "";
+  position: absolute;
+  inset: -6px -9px -5px -9px;
+  border: 1.6px solid var(--pd-red);
+  border-radius: 50%;
+  transform: rotate(-9deg);
+  filter: url(#pd-pencil);
+}
+
+/* Activity */
+.pd-heat {
+  display: grid;
+  grid-template-rows: repeat(7, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  filter: url(#pd-pencil);
+}
+
+.pd-cell {
+  aspect-ratio: 1;
+  border: 1px solid rgba(69, 64, 58, 0.28);
+  border-radius: 2px;
+}
+
+.pd-l1 {
+  background: repeating-linear-gradient(45deg, rgba(var(--pd-brown), 0.45) 0 1px, transparent 1px 4px);
+}
+
+.pd-l2 {
+  background: repeating-linear-gradient(45deg, rgba(var(--pd-brown), 0.6) 0 1.2px, transparent 1.2px 3px);
+}
+
+.pd-l3 {
+  background: repeating-linear-gradient(45deg, rgba(var(--pd-brown), 0.7) 0 1.2px, transparent 1.2px 3px),
+    repeating-linear-gradient(-45deg, rgba(var(--pd-brown), 0.55) 0 1px, transparent 1px 3.5px);
+}
+
+.pd-l4 {
+  background: repeating-linear-gradient(45deg, rgba(var(--pd-brown), 0.9) 0 1.4px, transparent 1.4px 2.6px),
+    repeating-linear-gradient(-45deg, rgba(var(--pd-brown), 0.8) 0 1.4px, transparent 1.4px 2.6px);
+}
+
+.pd-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--pd-graphite-soft);
+}
+
+.pd-legend .pd-cell {
+  width: 11px;
+}
+
+.pd-swatches {
+  display: flex;
+  gap: 3px;
+  filter: url(#pd-pencil);
+}
+
+/* Favorites */
+.pd-favs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pd-fav {
+  --pd-line: var(--pd-graphite-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 9px 9px;
+  font-size: 13px;
+  text-align: left;
+  min-width: 0;
+}
+
+.pd-fav .pd-ico {
+  width: 14px;
+  height: 14px;
+  color: var(--pd-graphite-soft);
+}
+
+.pd-fav span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Todo: ruled notebook */
+.pd-todo {
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-direction: column;
+}
+
+.pd-todo-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.pd-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 12px;
+  --pd-line: var(--pd-graphite-soft);
+}
+
+.pd-sort .pd-ico {
+  width: 12px;
+  height: 12px;
+}
+
+.pd-todo-list {
+  --pd-lh: 38px;
+  flex: 1;
+  min-height: calc(var(--pd-lh) * 8);
+  list-style: none;
+  margin: 4px -16px 0;
+  padding: 0 16px 0 0;
+  background: linear-gradient(90deg, transparent 28px, rgba(196, 85, 59, 0.45) 28px 29.5px, transparent 29.5px),
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--pd-lh) - 1px), var(--pd-rule) calc(var(--pd-lh) - 1px) var(--pd-lh));
+}
+
+.pd-todo-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--pd-lh);
+  padding-left: 40px;
+}
+
+.pd-check {
+  --pd-r: 3px;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.pd-check svg {
+  position: absolute;
+  left: 1px;
+  top: -6px;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--pd-graphite);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: url(#pd-pencil-line);
+}
+
+.pd-todo-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #a8532e;
+  text-decoration: underline 1px rgba(168, 83, 46, 0.6);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pd-todo-list li.done .pd-todo-text {
+  color: var(--pd-graphite-soft);
+  text-decoration: line-through 1.4px var(--pd-graphite-soft);
+}
+
+.pd-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 1px 8px;
+  --pd-r: 50%;
+}
+
+.pd-tag.pd-high {
+  color: var(--pd-red);
+  --pd-line: var(--pd-red);
+}
+
+.pd-tag.pd-medium {
+  color: var(--pd-ochre);
+  --pd-line: var(--pd-ochre);
+}
+
+.pd-due {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--pd-graphite-soft);
+}
+
+@media (max-width: 900px) {
+  .pd-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pd-todo {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .pd-todo-list {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .pd-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pd-brand {
+    font-size: 30px;
+  }
+
+  .pd-favs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
