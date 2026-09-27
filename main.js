@@ -38,9 +38,22 @@ function getDailyNoteSettings(app) {
     template: (options.template || "").trim()
   };
 }
+function datedNotePath(folder, format, date) {
+  const filename = `${date.format(format)}.md`;
+  const cleanFolder = folder.trim().replace(/^\/+|\/+$/g, "");
+  return cleanFolder ? `${cleanFolder}/${filename}` : filename;
+}
 function dailyNotePath(settings, date) {
-  const filename = `${date.format(settings.format)}.md`;
-  return settings.folder ? `${settings.folder}/${filename}` : filename;
+  return datedNotePath(settings.folder, settings.format, date);
+}
+async function ensureParentFolder(app, path) {
+  const parts = path.split("/").slice(0, -1);
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    if (!app.vault.getAbstractFileByPath(current))
+      await app.vault.createFolder(current);
+  }
 }
 function hasDailyNote(app, settings, date) {
   return !!app.vault.getAbstractFileByPath(dailyNotePath(settings, date));
@@ -104,6 +117,29 @@ async function collectTodos(app, limit) {
   }
   todos.sort((a, b) => b.file.stat.mtime - a.file.stat.mtime);
   return todos.slice(0, limit);
+}
+function formatTodoLine(text, priority, due) {
+  const parts = [`- [ ] ${text.trim()}`];
+  if (priority)
+    parts.push(`#${priority}`);
+  if (due)
+    parts.push(`\u{1F4C5} ${due}`);
+  return parts.join(" ");
+}
+async function appendLine(app, path, line) {
+  const existing = app.vault.getAbstractFileByPath(path);
+  if (existing instanceof import_obsidian.TFile) {
+    await app.vault.process(existing, (content) => {
+      const base = content === "" || content.endsWith("\n") ? content : `${content}
+`;
+      return `${base}${line}
+`;
+    });
+    return existing;
+  }
+  await ensureParentFolder(app, path);
+  return app.vault.create(path, `${line}
+`);
 }
 async function toggleTodo(app, todo) {
   await app.vault.process(todo.file, (content) => {
@@ -197,6 +233,12 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.todos = [];
     this.refreshHandle = null;
     this.clockHandle = null;
+    /** The Todo being written survives redraws (every vault change re-renders the whole view). */
+    this.draft = {
+      text: "",
+      priority: null,
+      due: null
+    };
     this.plugin = plugin;
   }
   getViewType() {
@@ -214,9 +256,10 @@ var DashboardView = class extends import_obsidian2.ItemView {
     await this.render();
     this.clockHandle = window.setInterval(() => this.renderClock(), 15e3);
     this.registerInterval(this.clockHandle);
-    this.registerEvent(this.app.vault.on("modify", () => this.scheduleRefresh()));
+    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
+    this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
   }
   async onClose() {
     if (this.refreshHandle)
@@ -233,10 +276,24 @@ var DashboardView = class extends import_obsidian2.ItemView {
   scheduleRefresh() {
     if (this.refreshHandle)
       window.clearTimeout(this.refreshHandle);
-    this.refreshHandle = window.setTimeout(() => this.render(), 700);
+    this.refreshHandle = window.setTimeout(() => {
+      if (this.isWritingTodo())
+        this.scheduleRefresh();
+      else
+        this.render();
+    }, 700);
+  }
+  todoInput() {
+    return this.contentEl.querySelector(".pd-todo-input");
+  }
+  isWritingTodo() {
+    const input = this.todoInput();
+    return !!input && input.ownerDocument.activeElement === input && input.value !== "";
   }
   async render() {
     this.todos = await collectTodos(this.app, TODO_LIMIT);
+    const input = this.todoInput();
+    const refocusTodo = !!input && input.ownerDocument.activeElement === input;
     this.contentEl.empty();
     this.contentEl.addClass("pd-surface");
     const root = this.contentEl.createDiv({ cls: "pd-root" });
@@ -261,6 +318,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.renderActivity(col2.createDiv({ cls: "pd-card pd-sk" }));
     this.renderFavorites(col2.createDiv({ cls: "pd-card pd-sk" }));
     this.renderTodo(grid.createDiv({ cls: "pd-card pd-sk pd-todo" }));
+    if (refocusTodo)
+      this.todoInput()?.focus();
   }
   renderClock() {
     const card = this.contentEl.querySelector("#pd-clock");
@@ -353,22 +412,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
         new import_obsidian2.Notice("\u3053\u306E\u65E5\u306E\u30CE\u30FC\u30C8\u306F\u3042\u308A\u307E\u305B\u3093");
         return;
       }
-      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-      if (dir)
-        await this.ensureFolder(dir);
+      await ensureParentFolder(this.app, path);
       file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
     }
     if (file instanceof import_obsidian2.TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
-    }
-  }
-  /** Creates each missing segment, since a date format like YYYY/MM/DD nests folders. */
-  async ensureFolder(dir) {
-    let current = "";
-    for (const part of dir.split("/")) {
-      current = current ? `${current}/${part}` : part;
-      if (!this.app.vault.getAbstractFileByPath(current))
-        await this.app.vault.createFolder(current);
     }
   }
   /** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
@@ -431,9 +479,21 @@ var DashboardView = class extends import_obsidian2.ItemView {
       this.sortBy = this.sortBy === "priority" ? "due" : "priority";
       this.render();
     });
-    const list = card.createEl("ul", { cls: "pd-todo-list" });
+    const target = this.plugin.todoNotePath((0, import_obsidian2.moment)());
+    const where = card.createEl("a", { cls: "pd-todo-where", text: `\u2192 ${target}`, attr: { title: "\u8FFD\u52A0\u5148\u306E\u30CE\u30FC\u30C8\u3092\u958B\u304F" } });
+    where.addEventListener("click", async (evt) => {
+      evt.preventDefault();
+      const file = this.app.vault.getAbstractFileByPath(target);
+      if (file instanceof import_obsidian2.TFile)
+        await this.app.workspace.getLeaf(false).openFile(file);
+      else
+        new import_obsidian2.Notice("\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002Todo\u3092\u8FFD\u52A0\u3059\u308B\u3068\u4F5C\u3089\u308C\u307E\u3059");
+    });
+    const paper = card.createDiv({ cls: "pd-todo-paper" });
+    this.renderTodoForm(paper);
+    const list = paper.createEl("ul", { cls: "pd-todo-list" });
     if (this.todos.length === 0) {
-      list.createEl("li", { cls: "pd-muted", text: "\u30C1\u30A7\u30C3\u30AF\u30DC\u30C3\u30AF\u30B9\uFF08- [ ]\uFF09\u3092\u542B\u3080\u30CE\u30FC\u30C8\u304C\u3053\u3053\u306B\u4E26\u3073\u307E\u3059\u3002" });
+      list.createEl("li", { cls: "pd-muted", text: "\u4E0A\u306E\u884C\u306B\u66F8\u3044\u3066 Enter \u3067\u8FFD\u52A0\u3067\u304D\u307E\u3059\u3002" });
       return;
     }
     const priorityRank = (t) => t.priority === "high" ? 0 : t.priority === "medium" ? 1 : 2;
@@ -469,6 +529,68 @@ var DashboardView = class extends import_obsidian2.ItemView {
       }
     }
   }
+  /** The first ruled line of the Todo card: write, optionally tag a priority / due date, Enter to add. */
+  renderTodoForm(paper) {
+    const row = paper.createDiv({ cls: "pd-todo-add" });
+    const add = pdButton(row, { cls: "pd-todo-plus", text: "+", attr: { title: "\u8FFD\u52A0", "aria-label": "Todo\u3092\u8FFD\u52A0" } });
+    const input = row.createEl("input", {
+      cls: "pd-todo-input",
+      attr: { type: "text", placeholder: "\u65B0\u3057\u3044Todo\u2026\uFF08Enter\u3067\u8FFD\u52A0\uFF09", "aria-label": "\u65B0\u3057\u3044Todo" }
+    });
+    input.value = this.draft.text;
+    input.addEventListener("input", () => this.draft.text = input.value);
+    input.addEventListener("keydown", (evt) => {
+      if (evt.key !== "Enter" || evt.isComposing || evt.keyCode === 229)
+        return;
+      evt.preventDefault();
+      this.addTodo();
+    });
+    add.addEventListener("click", () => this.draft.text.trim() ? this.addTodo() : input.focus());
+    const priority = this.draft.priority;
+    const flag = pdButton(row, {
+      cls: `pd-tag pd-sk pd-shade pd-todo-opt${priority ? ` pd-${priority}` : ""}`,
+      text: priority === "high" ? "High" : priority === "medium" ? "Medium" : "Priority",
+      attr: { title: "\u512A\u5148\u5EA6\uFF08\u62BC\u3059\u305F\u3073\u306B High \u2192 Medium \u2192 \u306A\u3057\uFF09" }
+    });
+    flag.addEventListener("click", () => {
+      this.draft.priority = priority === null ? "high" : priority === "high" ? "medium" : null;
+      this.render();
+    });
+    const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "\u671F\u65E5" } });
+    due.createSpan({ text: this.draft.due ? this.formatDue(this.draft.due) : "Due" });
+    if (this.draft.due)
+      due.addClass("is-set");
+    const picker = due.createEl("input", { attr: { type: "date", tabindex: "-1", "aria-hidden": "true" } });
+    if (this.draft.due)
+      picker.value = this.draft.due;
+    picker.addEventListener("change", () => {
+      this.draft.due = picker.value || null;
+      this.render();
+    });
+    due.addEventListener("click", () => {
+      try {
+        picker.showPicker();
+      } catch {
+        picker.focus();
+      }
+    });
+  }
+  async addTodo() {
+    const text = this.draft.text.trim();
+    if (!text)
+      return;
+    const path = this.plugin.todoNotePath((0, import_obsidian2.moment)());
+    try {
+      await appendLine(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
+    } catch (err) {
+      console.error(err);
+      new import_obsidian2.Notice(`Todo\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F: ${path}`);
+      return;
+    }
+    this.draft = { text: "", priority: null, due: null };
+    await this.render();
+    this.todoInput()?.focus();
+  }
   formatDue(due) {
     const d = (0, import_obsidian2.moment)(due, "YYYY-MM-DD");
     const today = (0, import_obsidian2.moment)().startOf("day");
@@ -485,7 +607,9 @@ var DashboardView = class extends import_obsidian2.ItemView {
 
 // src/main.ts
 var DEFAULT_SETTINGS = {
-  background: "paper"
+  background: "paper",
+  todoFolder: "Todo",
+  todoFormat: ""
 };
 var FILTER_HOST_ID = "pencil-dashboard-svg-defs";
 function ensureSvgDefs() {
@@ -512,6 +636,13 @@ function ensureSvgDefs() {
         <feDisplacementMap in="SourceGraphic" in2="warp" scale="2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
         <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="2" result="noise"/>
         <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2 0 0 0 1.75" result="mask"/>
+        <feComposite in="wobbly" in2="mask" operator="in"/>
+      </filter>
+      <filter id="pd-text" x="-3%" y="-15%" width="106%" height="130%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="11" result="warp"/>
+        <feDisplacementMap in="SourceGraphic" in2="warp" scale="1.2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+        <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="4" result="noise"/>
+        <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1.3 0 0 0 1.5" result="mask"/>
         <feComposite in="wobbly" in2="mask" operator="in"/>
       </filter>
       <filter id="pd-grain">
@@ -550,9 +681,17 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
   onunload() {
     document.getElementById(FILTER_HOST_ID)?.remove();
   }
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+  /** Where a Todo added on `date` is written, laid out like the daily notes (e.g. Todo/2026/09/2026-09-27.md). */
+  todoNotePath(date) {
+    const format = this.settings.todoFormat.trim() || getDailyNoteSettings(this.app).format;
+    return datedNotePath(this.settings.todoFolder, format, date);
+  }
   async setBackground(background) {
     this.settings.background = background;
-    await this.saveData(this.settings);
+    await this.saveSettings();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)) {
       if (leaf.view instanceof DashboardView)
         leaf.view.applyBackground();
@@ -581,5 +720,25 @@ var PencilDashboardSettingTab = class extends import_obsidian3.PluginSettingTab 
         dropdown.addOption(value, label);
       dropdown.setValue(this.plugin.settings.background).onChange((value) => this.plugin.setBackground(value));
     });
+    new import_obsidian3.Setting(containerEl).setName("Todo").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("\u4FDD\u5B58\u5148\u30D5\u30A9\u30EB\u30C0\u30FC").setDesc("\u30C0\u30C3\u30B7\u30E5\u30DC\u30FC\u30C9\u3067\u8FFD\u52A0\u3057\u305FTodo\u3092\u5165\u308C\u308B\u30D5\u30A9\u30EB\u30C0\u30FC\u3002\u7121\u3051\u308C\u3070\u81EA\u52D5\u3067\u4F5C\u308A\u307E\u3059\u3002").addText(
+      (text) => text.setPlaceholder("Todo").setValue(this.plugin.settings.todoFolder).onChange(async (value) => {
+        this.plugin.settings.todoFolder = value.trim();
+        await this.plugin.saveSettings();
+        updateExample();
+      })
+    );
+    new import_obsidian3.Setting(containerEl).setName("\u30CE\u30FC\u30C8\u540D\u306E\u66F8\u5F0F").setDesc(
+      "\u30C7\u30A4\u30EA\u30FC\u30CE\u30FC\u30C8\u3068\u540C\u3058\u66F8\u304D\u65B9\u3067\u3059\u3002\u7A7A\u6B04\u306A\u3089\u30C7\u30A4\u30EA\u30FC\u30CE\u30FC\u30C8\u306E\u66F8\u5F0F\u3068\u540C\u3058\u306B\u306A\u308A\u307E\u3059\uFF08\u4F8B: YYYY/MM/YYYY-MM-DD \u3067\u65E5\u3054\u3068\u3001YYYY/YYYY-MM \u3067\u6708\u3054\u3068\u3001[Inbox] \u30671\u3064\u306E\u30CE\u30FC\u30C8\u306B\u307E\u3068\u3081\u308B\uFF09\u3002"
+    ).addText(
+      (text) => text.setPlaceholder(getDailyNoteSettings(this.app).format).setValue(this.plugin.settings.todoFormat).onChange(async (value) => {
+        this.plugin.settings.todoFormat = value.trim();
+        await this.plugin.saveSettings();
+        updateExample();
+      })
+    );
+    const example = new import_obsidian3.Setting(containerEl).setName("\u4ECA\u65E5\u8FFD\u52A0\u3059\u308B\u3068");
+    const updateExample = () => example.setDesc(`${this.plugin.todoNotePath((0, import_obsidian3.moment)())} \u306E\u672B\u5C3E\u306B\u66F8\u304D\u8DB3\u3055\u308C\u307E\u3059\u3002`);
+    updateExample();
   }
 };

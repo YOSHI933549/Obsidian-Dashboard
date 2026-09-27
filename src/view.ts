@@ -10,6 +10,9 @@ import {
   toggleTodo,
   TodoItem,
   DailyNoteSettings,
+  ensureParentFolder,
+  formatTodoLine,
+  appendLine,
 } from "./data";
 import { iconSvg } from "./icons";
 import { Background, BACKGROUNDS } from "./backgrounds";
@@ -61,6 +64,12 @@ export class DashboardView extends ItemView {
   private todos: TodoItem[] = [];
   private refreshHandle: number | null = null;
   private clockHandle: number | null = null;
+  /** The Todo being written survives redraws (every vault change re-renders the whole view). */
+  private draft: { text: string; priority: "high" | "medium" | null; due: string | null } = {
+    text: "",
+    priority: null,
+    due: null,
+  };
 
   constructor(leaf: WorkspaceLeaf, plugin: PencilDashboardPlugin) {
     super(leaf);
@@ -87,9 +96,11 @@ export class DashboardView extends ItemView {
     this.clockHandle = window.setInterval(() => this.renderClock(), 15000);
     this.registerInterval(this.clockHandle);
 
-    this.registerEvent(this.app.vault.on("modify", () => this.scheduleRefresh()));
+    // "changed" fires once a note is re-parsed, so a just-added checkbox is already in the cache.
+    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
+    this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
   }
 
   async onClose(): Promise<void> {
@@ -107,11 +118,27 @@ export class DashboardView extends ItemView {
 
   private scheduleRefresh(): void {
     if (this.refreshHandle) window.clearTimeout(this.refreshHandle);
-    this.refreshHandle = window.setTimeout(() => this.render(), 700);
+    this.refreshHandle = window.setTimeout(() => {
+      // Redrawing mid-typing would break an IME conversion, so wait until the Todo field is left or emptied.
+      if (this.isWritingTodo()) this.scheduleRefresh();
+      else this.render();
+    }, 700);
+  }
+
+  private todoInput(): HTMLInputElement | null {
+    return this.contentEl.querySelector<HTMLInputElement>(".pd-todo-input");
+  }
+
+  private isWritingTodo(): boolean {
+    const input = this.todoInput();
+    return !!input && input.ownerDocument.activeElement === input && input.value !== "";
   }
 
   private async render(): Promise<void> {
     this.todos = await collectTodos(this.app, TODO_LIMIT);
+
+    const input = this.todoInput();
+    const refocusTodo = !!input && input.ownerDocument.activeElement === input;
 
     this.contentEl.empty();
     this.contentEl.addClass("pd-surface");
@@ -142,6 +169,8 @@ export class DashboardView extends ItemView {
     this.renderActivity(col2.createDiv({ cls: "pd-card pd-sk" }));
     this.renderFavorites(col2.createDiv({ cls: "pd-card pd-sk" }));
     this.renderTodo(grid.createDiv({ cls: "pd-card pd-sk pd-todo" }));
+
+    if (refocusTodo) this.todoInput()?.focus();
   }
 
   private renderClock(): void {
@@ -244,21 +273,11 @@ export class DashboardView extends ItemView {
         new Notice("この日のノートはありません");
         return;
       }
-      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-      if (dir) await this.ensureFolder(dir);
+      await ensureParentFolder(this.app, path);
       file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
     }
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
-    }
-  }
-
-  /** Creates each missing segment, since a date format like YYYY/MM/DD nests folders. */
-  private async ensureFolder(dir: string): Promise<void> {
-    let current = "";
-    for (const part of dir.split("/")) {
-      current = current ? `${current}/${part}` : part;
-      if (!this.app.vault.getAbstractFileByPath(current)) await this.app.vault.createFolder(current);
     }
   }
 
@@ -329,9 +348,21 @@ export class DashboardView extends ItemView {
       this.render();
     });
 
-    const list = card.createEl("ul", { cls: "pd-todo-list" });
+    const target = this.plugin.todoNotePath(moment());
+    const where = card.createEl("a", { cls: "pd-todo-where", text: `→ ${target}`, attr: { title: "追加先のノートを開く" } });
+    where.addEventListener("click", async (evt) => {
+      evt.preventDefault();
+      const file = this.app.vault.getAbstractFileByPath(target);
+      if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
+      else new Notice("まだありません。Todoを追加すると作られます");
+    });
+
+    const paper = card.createDiv({ cls: "pd-todo-paper" });
+    this.renderTodoForm(paper);
+
+    const list = paper.createEl("ul", { cls: "pd-todo-list" });
     if (this.todos.length === 0) {
-      list.createEl("li", { cls: "pd-muted", text: "チェックボックス（- [ ]）を含むノートがここに並びます。" });
+      list.createEl("li", { cls: "pd-muted", text: "上の行に書いて Enter で追加できます。" });
       return;
     }
 
@@ -372,6 +403,71 @@ export class DashboardView extends ItemView {
         li.createSpan({ cls: "pd-due", text: this.formatDue(todo.due) });
       }
     }
+  }
+
+  /** The first ruled line of the Todo card: write, optionally tag a priority / due date, Enter to add. */
+  private renderTodoForm(paper: HTMLElement): void {
+    const row = paper.createDiv({ cls: "pd-todo-add" });
+
+    const add = pdButton(row, { cls: "pd-todo-plus", text: "+", attr: { title: "追加", "aria-label": "Todoを追加" } });
+    const input = row.createEl("input", {
+      cls: "pd-todo-input",
+      attr: { type: "text", placeholder: "新しいTodo…（Enterで追加）", "aria-label": "新しいTodo" },
+    });
+    input.value = this.draft.text;
+    input.addEventListener("input", () => (this.draft.text = input.value));
+    input.addEventListener("keydown", (evt) => {
+      // The Enter that confirms a Japanese IME conversion must not add the Todo.
+      if (evt.key !== "Enter" || evt.isComposing || evt.keyCode === 229) return;
+      evt.preventDefault();
+      this.addTodo();
+    });
+    add.addEventListener("click", () => (this.draft.text.trim() ? this.addTodo() : input.focus()));
+
+    const priority = this.draft.priority;
+    const flag = pdButton(row, {
+      cls: `pd-tag pd-sk pd-shade pd-todo-opt${priority ? ` pd-${priority}` : ""}`,
+      text: priority === "high" ? "High" : priority === "medium" ? "Medium" : "Priority",
+      attr: { title: "優先度（押すたびに High → Medium → なし）" },
+    });
+    flag.addEventListener("click", () => {
+      this.draft.priority = priority === null ? "high" : priority === "high" ? "medium" : null;
+      this.render();
+    });
+
+    const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "期日" } });
+    due.createSpan({ text: this.draft.due ? this.formatDue(this.draft.due) : "Due" });
+    if (this.draft.due) due.addClass("is-set");
+    // A real date input sits invisibly inside so the system date picker opens on every platform.
+    const picker = due.createEl("input", { attr: { type: "date", tabindex: "-1", "aria-hidden": "true" } });
+    if (this.draft.due) picker.value = this.draft.due;
+    picker.addEventListener("change", () => {
+      this.draft.due = picker.value || null;
+      this.render();
+    });
+    due.addEventListener("click", () => {
+      try {
+        picker.showPicker();
+      } catch {
+        picker.focus();
+      }
+    });
+  }
+
+  private async addTodo(): Promise<void> {
+    const text = this.draft.text.trim();
+    if (!text) return;
+    const path = this.plugin.todoNotePath(moment());
+    try {
+      await appendLine(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
+    } catch (err) {
+      console.error(err);
+      new Notice(`Todoを追加できませんでした: ${path}`);
+      return;
+    }
+    this.draft = { text: "", priority: null, due: null };
+    await this.render();
+    this.todoInput()?.focus();
   }
 
   private formatDue(due: string): string {

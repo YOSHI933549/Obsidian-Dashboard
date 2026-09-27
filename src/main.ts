@@ -1,13 +1,19 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, moment } from "obsidian";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
 import { Background, BACKGROUNDS } from "./backgrounds";
+import { datedNotePath, getDailyNoteSettings } from "./data";
 
 interface PencilDashboardSettings {
   background: Background;
+  todoFolder: string;
+  /** moment format for the Todo note's name; blank means "same as the daily notes format". */
+  todoFormat: string;
 }
 
 const DEFAULT_SETTINGS: PencilDashboardSettings = {
   background: "paper",
+  todoFolder: "Todo",
+  todoFormat: "",
 };
 
 const FILTER_HOST_ID = "pencil-dashboard-svg-defs";
@@ -36,6 +42,13 @@ function ensureSvgDefs(): void {
         <feDisplacementMap in="SourceGraphic" in2="warp" scale="2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
         <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="2" result="noise"/>
         <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2 0 0 0 1.75" result="mask"/>
+        <feComposite in="wobbly" in2="mask" operator="in"/>
+      </filter>
+      <filter id="pd-text" x="-3%" y="-15%" width="106%" height="130%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="11" result="warp"/>
+        <feDisplacementMap in="SourceGraphic" in2="warp" scale="1.2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+        <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="4" result="noise"/>
+        <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1.3 0 0 0 1.5" result="mask"/>
         <feComposite in="wobbly" in2="mask" operator="in"/>
       </filter>
       <filter id="pd-grain">
@@ -80,9 +93,19 @@ export default class PencilDashboardPlugin extends Plugin {
     document.getElementById(FILTER_HOST_ID)?.remove();
   }
 
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  /** Where a Todo added on `date` is written, laid out like the daily notes (e.g. Todo/2026/09/2026-09-27.md). */
+  todoNotePath(date: moment.Moment): string {
+    const format = this.settings.todoFormat.trim() || getDailyNoteSettings(this.app).format;
+    return datedNotePath(this.settings.todoFolder, format, date);
+  }
+
   async setBackground(background: Background): Promise<void> {
     this.settings.background = background;
-    await this.saveData(this.settings);
+    await this.saveSettings();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)) {
       if (leaf.view instanceof DashboardView) leaf.view.applyBackground();
     }
@@ -116,5 +139,42 @@ class PencilDashboardSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.background)
           .onChange((value) => this.plugin.setBackground(value as Background));
       });
+
+    new Setting(containerEl).setName("Todo").setHeading();
+
+    new Setting(containerEl)
+      .setName("保存先フォルダー")
+      .setDesc("ダッシュボードで追加したTodoを入れるフォルダー。無ければ自動で作ります。")
+      .addText((text) =>
+        text
+          .setPlaceholder("Todo")
+          .setValue(this.plugin.settings.todoFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.todoFolder = value.trim();
+            await this.plugin.saveSettings();
+            updateExample();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("ノート名の書式")
+      .setDesc(
+        "デイリーノートと同じ書き方です。空欄ならデイリーノートの書式と同じになります" +
+          "（例: YYYY/MM/YYYY-MM-DD で日ごと、YYYY/YYYY-MM で月ごと、[Inbox] で1つのノートにまとめる）。"
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(getDailyNoteSettings(this.app).format)
+          .setValue(this.plugin.settings.todoFormat)
+          .onChange(async (value) => {
+            this.plugin.settings.todoFormat = value.trim();
+            await this.plugin.saveSettings();
+            updateExample();
+          })
+      );
+
+    const example = new Setting(containerEl).setName("今日追加すると");
+    const updateExample = () => example.setDesc(`${this.plugin.todoNotePath(moment())} の末尾に書き足されます。`);
+    updateExample();
   }
 }
