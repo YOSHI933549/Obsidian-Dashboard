@@ -21,7 +21,7 @@ BRAT の「Add Beta plugin」に `YOSHI933549/Obsidian-Dashboard` を入れる�
 
 ## リリースの作り方
 
-`manifest.json` / `package.json` / `versions.json` のバージョンを上げてコミットし、同じ番号のタグ（例: `1.1.0`、`v` なし）を push すると、GitHub Actions がビルドして `main.js` / `manifest.json` / `styles.css` 付きのリリースを作ります。
+`manifest.json` / `package.json` / `versions.json` のバージョンを上げて main に push すると、GitHub Actions がビルドし、そのバージョン番号のタグと `main.js` / `manifest.json` / `styles.css` 付きのリリースを自動で作ります（同じバージョンのリリースが既にあれば何もしません）。
 
 ## インストール（手動）
 

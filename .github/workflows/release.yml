@@ -1,8 +1,11 @@
 name: Release
 
+# Publishes manifest.json's version as a release (tag + main.js/manifest.json/styles.css)
+# the first time that version reaches main; later pushes with the same version are no-ops.
 on:
   push:
-    tags: ["*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,10 +20,21 @@ jobs:
           node-version: 20
       - run: npm ci
       - run: npm run build
-      # BRAT matches the release tag against manifest.json, so refuse a mismatched tag.
-      - run: test "$(node -p "require('./manifest.json').version")" = "$GITHUB_REF_NAME"
-      - uses: softprops/action-gh-release@v2
+      - id: version
+        run: echo "value=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
+      - id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.value }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.existing.outputs.found != 'true'
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.value }}
+          name: ${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
           files: |
             main.js
             manifest.json
