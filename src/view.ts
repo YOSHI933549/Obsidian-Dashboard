@@ -36,6 +36,24 @@ const QUICK_ACTIONS: { icon: Parameters<typeof iconSvg>[0]; title: string; comma
   { icon: "file", title: "Other files" },
 ];
 
+/**
+ * Obsidian themes style every <button> (background, text colour, height), which fights the pencil look,
+ * so clickable parts are unstyled divs that still behave like buttons for keyboard users.
+ */
+function pdButton(parent: HTMLElement, info: DomElementInfo): HTMLElement {
+  const el = parent.createDiv(info);
+  el.addClass("pd-btn");
+  if (!el.hasAttribute("role")) el.setAttribute("role", "button");
+  el.tabIndex = 0;
+  el.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" || evt.key === " ") {
+      evt.preventDefault();
+      el.click();
+    }
+  });
+  return el;
+}
+
 export class DashboardView extends ItemView {
   private plugin: PencilDashboardPlugin;
   private viewMonth = moment().startOf("month");
@@ -101,7 +119,7 @@ export class DashboardView extends ItemView {
 
     root.createDiv({ cls: "pd-tabs", attr: { role: "group", "aria-label": "背景" } }, (tabs) => {
       (Object.entries(BACKGROUNDS) as [Background, string][]).forEach(([value, label], i) => {
-        const tab = tabs.createEl("button", {
+        const tab = pdButton(tabs, {
           cls: "pd-tab pd-sk pd-shade",
           text: String(i + 1),
           attr: { title: label, "aria-label": `背景: ${label}`, "data-bg": value },
@@ -157,12 +175,12 @@ export class DashboardView extends ItemView {
     search.createEl("span", { cls: "pd-search-placeholder", text: "Search or command" });
     search.addEventListener("click", () => this.runCommand("switcher:open"));
 
-    const newNote = searchRow.createEl("button", { cls: "pd-new-note pd-sk pd-shade", text: "＋ New note" });
+    const newNote = pdButton(searchRow, { cls: "pd-new-note pd-sk pd-shade", text: "＋ New note" });
     newNote.addEventListener("click", () => this.runCommand("file-explorer:new-file"));
 
     const quick = hero.createDiv({ cls: "pd-quick" });
     for (const action of QUICK_ACTIONS) {
-      const btn = quick.createEl("button", { cls: "pd-sk pd-shade", attr: { title: action.title } });
+      const btn = pdButton(quick, { cls: "pd-sk pd-shade", attr: { title: action.title } });
       btn.innerHTML = iconSvg(action.icon);
       if (action.command) {
         btn.addEventListener("click", () => this.runCommand(action.command as string));
@@ -182,9 +200,9 @@ export class DashboardView extends ItemView {
   private renderCalendar(card: HTMLElement): void {
     card.createEl("h2", { text: "Calendar" });
     const head = card.createDiv({ cls: "pd-cal-head" });
-    const prev = head.createEl("button", { cls: "pd-sk pd-shade", text: "‹" });
+    const prev = pdButton(head, { cls: "pd-sk pd-shade", text: "‹" });
     head.createEl("h3", { text: `${MONTHS[this.viewMonth.month()]} ${this.viewMonth.year()}` });
-    const next = head.createEl("button", { cls: "pd-sk pd-shade", text: "›" });
+    const next = pdButton(head, { cls: "pd-sk pd-shade", text: "›" });
     prev.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().subtract(1, "month");
       this.render();
@@ -207,7 +225,7 @@ export class DashboardView extends ItemView {
 
     for (let i = 0; i < cells; i++) {
       const date = start.clone().add(i, "days");
-      const day = grid.createEl("button", { cls: "pd-day pd-shade" });
+      const day = pdButton(grid, { cls: "pd-day pd-shade" });
       if (date.month() !== this.viewMonth.month()) day.addClass("out");
       if (date.isSame(today, "day")) day.addClass("today");
       if (hasDailyNote(this.app, settings, date)) day.addClass("has-note");
@@ -290,7 +308,7 @@ export class DashboardView extends ItemView {
       return;
     }
     for (const fav of favs) {
-      const btn = box.createEl("button", { cls: "pd-fav pd-sk pd-shade" });
+      const btn = pdButton(box, { cls: "pd-fav pd-sk pd-shade" });
       btn.innerHTML = iconSvg(fav.type === "folder" ? "folder" : "file-text");
       btn.createSpan({ text: fav.title });
       btn.addEventListener("click", async () => {
@@ -303,7 +321,7 @@ export class DashboardView extends ItemView {
   private renderTodo(card: HTMLElement): void {
     const head = card.createDiv({ cls: "pd-todo-head" });
     head.createEl("h2", { text: "Todo" });
-    const sort = head.createEl("button", { cls: "pd-sort pd-sk pd-shade" });
+    const sort = pdButton(head, { cls: "pd-sort pd-sk pd-shade" });
     sort.innerHTML = iconSvg("sort");
     sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "Due" });
     sort.addEventListener("click", () => {
@@ -327,7 +345,7 @@ export class DashboardView extends ItemView {
       const li = list.createEl("li");
       if (todo.checked) li.addClass("done");
 
-      const check = li.createEl("button", {
+      const check = pdButton(li, {
         cls: "pd-check pd-sk pd-shade",
         attr: { role: "checkbox", "aria-checked": String(todo.checked) },
       });

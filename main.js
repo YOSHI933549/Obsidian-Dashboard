@@ -175,6 +175,20 @@ var QUICK_ACTIONS = [
   { icon: "file-down", title: "PDF" },
   { icon: "file", title: "Other files" }
 ];
+function pdButton(parent, info) {
+  const el = parent.createDiv(info);
+  el.addClass("pd-btn");
+  if (!el.hasAttribute("role"))
+    el.setAttribute("role", "button");
+  el.tabIndex = 0;
+  el.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" || evt.key === " ") {
+      evt.preventDefault();
+      el.click();
+    }
+  });
+  return el;
+}
 var DashboardView = class extends import_obsidian2.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -228,7 +242,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const root = this.contentEl.createDiv({ cls: "pd-root" });
     root.createDiv({ cls: "pd-tabs", attr: { role: "group", "aria-label": "\u80CC\u666F" } }, (tabs) => {
       Object.entries(BACKGROUNDS).forEach(([value, label], i) => {
-        const tab = tabs.createEl("button", {
+        const tab = pdButton(tabs, {
           cls: "pd-tab pd-sk pd-shade",
           text: String(i + 1),
           attr: { title: label, "aria-label": `\u80CC\u666F: ${label}`, "data-bg": value }
@@ -273,11 +287,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
     search.innerHTML = iconSvg("search");
     search.createEl("span", { cls: "pd-search-placeholder", text: "Search or command" });
     search.addEventListener("click", () => this.runCommand("switcher:open"));
-    const newNote = searchRow.createEl("button", { cls: "pd-new-note pd-sk pd-shade", text: "\uFF0B New note" });
+    const newNote = pdButton(searchRow, { cls: "pd-new-note pd-sk pd-shade", text: "\uFF0B New note" });
     newNote.addEventListener("click", () => this.runCommand("file-explorer:new-file"));
     const quick = hero.createDiv({ cls: "pd-quick" });
     for (const action of QUICK_ACTIONS) {
-      const btn = quick.createEl("button", { cls: "pd-sk pd-shade", attr: { title: action.title } });
+      const btn = pdButton(quick, { cls: "pd-sk pd-shade", attr: { title: action.title } });
       btn.innerHTML = iconSvg(action.icon);
       if (action.command) {
         btn.addEventListener("click", () => this.runCommand(action.command));
@@ -295,9 +309,9 @@ var DashboardView = class extends import_obsidian2.ItemView {
   renderCalendar(card) {
     card.createEl("h2", { text: "Calendar" });
     const head = card.createDiv({ cls: "pd-cal-head" });
-    const prev = head.createEl("button", { cls: "pd-sk pd-shade", text: "\u2039" });
+    const prev = pdButton(head, { cls: "pd-sk pd-shade", text: "\u2039" });
     head.createEl("h3", { text: `${MONTHS[this.viewMonth.month()]} ${this.viewMonth.year()}` });
-    const next = head.createEl("button", { cls: "pd-sk pd-shade", text: "\u203A" });
+    const next = pdButton(head, { cls: "pd-sk pd-shade", text: "\u203A" });
     prev.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().subtract(1, "month");
       this.render();
@@ -318,7 +332,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const start = first.clone().subtract(offset, "days");
     for (let i = 0; i < cells; i++) {
       const date = start.clone().add(i, "days");
-      const day = grid.createEl("button", { cls: "pd-day pd-shade" });
+      const day = pdButton(grid, { cls: "pd-day pd-shade" });
       if (date.month() !== this.viewMonth.month())
         day.addClass("out");
       if (date.isSame(today, "day"))
@@ -397,7 +411,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
       return;
     }
     for (const fav of favs) {
-      const btn = box.createEl("button", { cls: "pd-fav pd-sk pd-shade" });
+      const btn = pdButton(box, { cls: "pd-fav pd-sk pd-shade" });
       btn.innerHTML = iconSvg(fav.type === "folder" ? "folder" : "file-text");
       btn.createSpan({ text: fav.title });
       btn.addEventListener("click", async () => {
@@ -410,7 +424,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
   renderTodo(card) {
     const head = card.createDiv({ cls: "pd-todo-head" });
     head.createEl("h2", { text: "Todo" });
-    const sort = head.createEl("button", { cls: "pd-sort pd-sk pd-shade" });
+    const sort = pdButton(head, { cls: "pd-sort pd-sk pd-shade" });
     sort.innerHTML = iconSvg("sort");
     sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "Due" });
     sort.addEventListener("click", () => {
@@ -431,7 +445,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
       const li = list.createEl("li");
       if (todo.checked)
         li.addClass("done");
-      const check = li.createEl("button", {
+      const check = pdButton(li, {
         cls: "pd-check pd-sk pd-shade",
         attr: { role: "checkbox", "aria-checked": String(todo.checked) }
       });
