@@ -9,6 +9,7 @@ import {
   collectTodos,
   toggleTodo,
   TodoItem,
+  DailyNoteSettings,
 } from "./data";
 import { iconSvg } from "./icons";
 
@@ -61,6 +62,7 @@ export class DashboardView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.containerEl.addClass("pencil-dashboard-container");
+    this.applyBackground();
     await this.render();
 
     this.clockHandle = window.setInterval(() => this.renderClock(), 15000);
@@ -73,6 +75,10 @@ export class DashboardView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.refreshHandle) window.clearTimeout(this.refreshHandle);
+  }
+
+  applyBackground(): void {
+    this.containerEl.dataset.pdBg = this.plugin.settings.background;
   }
 
   private scheduleRefresh(): void {
@@ -205,7 +211,7 @@ export class DashboardView extends ItemView {
     }
   }
 
-  private async openOrCreateDailyNote(date: moment.Moment, settings: ReturnType<typeof getDailyNoteSettings>): Promise<void> {
+  private async openOrCreateDailyNote(date: moment.Moment, settings: DailyNoteSettings): Promise<void> {
     const path = dailyNotePath(settings, date);
     let file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
@@ -214,14 +220,37 @@ export class DashboardView extends ItemView {
         new Notice("この日のノートはありません");
         return;
       }
-      if (settings.folder && !this.app.vault.getAbstractFileByPath(settings.folder)) {
-        await this.app.vault.createFolder(settings.folder).catch(() => undefined);
-      }
-      file = await this.app.vault.create(path, `# ${date.format("YYYY-MM-DD")}\n`);
+      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      if (dir) await this.ensureFolder(dir);
+      file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
     }
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     }
+  }
+
+  /** Creates each missing segment, since a date format like YYYY/MM/DD nests folders. */
+  private async ensureFolder(dir: string): Promise<void> {
+    let current = "";
+    for (const part of dir.split("/")) {
+      current = current ? `${current}/${part}` : part;
+      if (!this.app.vault.getAbstractFileByPath(current)) await this.app.vault.createFolder(current);
+    }
+  }
+
+  /** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
+  private async dailyNoteContent(settings: DailyNoteSettings, date: moment.Moment): Promise<string> {
+    if (!settings.template) return "";
+    const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
+    const template = this.app.vault.getAbstractFileByPath(templatePath);
+    if (!(template instanceof TFile)) return "";
+    const now = moment();
+    return (await this.app.vault.read(template))
+      .replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => date.format(fmt))
+      .replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => now.format(fmt))
+      .replace(/{{\s*date\s*}}/gi, date.format(settings.format))
+      .replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
+      .replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
   }
 
   private renderActivity(card: HTMLElement): void {

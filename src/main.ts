@@ -1,5 +1,20 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
+
+export type Background = "paper" | "cork";
+
+export const BACKGROUNDS: Record<Background, string> = {
+  paper: "紙",
+  cork: "コルクボード",
+};
+
+interface PencilDashboardSettings {
+  background: Background;
+}
+
+const DEFAULT_SETTINGS: PencilDashboardSettings = {
+  background: "paper",
+};
 
 const FILTER_HOST_ID = "pencil-dashboard-svg-defs";
 
@@ -42,8 +57,19 @@ function ensureSvgDefs(): void {
 }
 
 export default class PencilDashboardPlugin extends Plugin {
+  settings: PencilDashboardSettings = { ...DEFAULT_SETTINGS };
+
   async onload(): Promise<void> {
+    this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
     ensureSvgDefs();
+
+    this.addSettingTab(new PencilDashboardSettingTab(this.app, this));
+
+    this.addCommand({
+      id: "toggle-background",
+      name: "背景を切り替え（紙 ⇔ コルクボード）",
+      callback: () => this.setBackground(this.settings.background === "paper" ? "cork" : "paper"),
+    });
 
     this.registerView(VIEW_TYPE_PENCIL_DASHBOARD, (leaf) => new DashboardView(leaf, this));
 
@@ -60,6 +86,14 @@ export default class PencilDashboardPlugin extends Plugin {
     document.getElementById(FILTER_HOST_ID)?.remove();
   }
 
+  async setBackground(background: Background): Promise<void> {
+    this.settings.background = background;
+    await this.saveData(this.settings);
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)) {
+      if (leaf.view instanceof DashboardView) leaf.view.applyBackground();
+    }
+  }
+
   async activateView(): Promise<void> {
     const { workspace } = this.app;
     let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)[0] ?? null;
@@ -68,5 +102,25 @@ export default class PencilDashboardPlugin extends Plugin {
       await leaf.setViewState({ type: VIEW_TYPE_PENCIL_DASHBOARD, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+}
+
+class PencilDashboardSettingTab extends PluginSettingTab {
+  constructor(app: App, private plugin: PencilDashboardPlugin) {
+    super(app, plugin);
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+    new Setting(containerEl)
+      .setName("背景")
+      .setDesc("ダッシュボードの背景を選びます。")
+      .addDropdown((dropdown) => {
+        for (const [value, label] of Object.entries(BACKGROUNDS)) dropdown.addOption(value, label);
+        dropdown
+          .setValue(this.plugin.settings.background)
+          .onChange((value) => this.plugin.setBackground(value as Background));
+      });
   }
 }

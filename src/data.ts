@@ -3,6 +3,7 @@ import { App, TFile, moment } from "obsidian";
 export interface DailyNoteSettings {
   format: string;
   folder: string;
+  template: string;
 }
 
 /** Reads the core "Daily notes" plugin's format/folder, falling back to its defaults. */
@@ -13,6 +14,7 @@ export function getDailyNoteSettings(app: App): DailyNoteSettings {
   return {
     format: options.format || "YYYY-MM-DD",
     folder: (options.folder || "").replace(/\/$/, ""),
+    template: (options.template || "").trim(),
   };
 }
 

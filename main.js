@@ -19,6 +19,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
+  BACKGROUNDS: () => BACKGROUNDS,
   default: () => PencilDashboardPlugin
 });
 module.exports = __toCommonJS(main_exports);
@@ -34,7 +35,8 @@ function getDailyNoteSettings(app) {
   const options = instance?.options ?? {};
   return {
     format: options.format || "YYYY-MM-DD",
-    folder: (options.folder || "").replace(/\/$/, "")
+    folder: (options.folder || "").replace(/\/$/, ""),
+    template: (options.template || "").trim()
   };
 }
 function dailyNotePath(settings, date) {
@@ -187,6 +189,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
   }
   async onOpen() {
     this.containerEl.addClass("pencil-dashboard-container");
+    this.applyBackground();
     await this.render();
     this.clockHandle = window.setInterval(() => this.renderClock(), 15e3);
     this.registerInterval(this.clockHandle);
@@ -197,6 +200,9 @@ var DashboardView = class extends import_obsidian2.ItemView {
   async onClose() {
     if (this.refreshHandle)
       window.clearTimeout(this.refreshHandle);
+  }
+  applyBackground() {
+    this.containerEl.dataset.pdBg = this.plugin.settings.background;
   }
   scheduleRefresh() {
     if (this.refreshHandle)
@@ -322,15 +328,34 @@ var DashboardView = class extends import_obsidian2.ItemView {
         new import_obsidian2.Notice("\u3053\u306E\u65E5\u306E\u30CE\u30FC\u30C8\u306F\u3042\u308A\u307E\u305B\u3093");
         return;
       }
-      if (settings.folder && !this.app.vault.getAbstractFileByPath(settings.folder)) {
-        await this.app.vault.createFolder(settings.folder).catch(() => void 0);
-      }
-      file = await this.app.vault.create(path, `# ${date.format("YYYY-MM-DD")}
-`);
+      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      if (dir)
+        await this.ensureFolder(dir);
+      file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
     }
     if (file instanceof import_obsidian2.TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     }
+  }
+  /** Creates each missing segment, since a date format like YYYY/MM/DD nests folders. */
+  async ensureFolder(dir) {
+    let current = "";
+    for (const part of dir.split("/")) {
+      current = current ? `${current}/${part}` : part;
+      if (!this.app.vault.getAbstractFileByPath(current))
+        await this.app.vault.createFolder(current);
+    }
+  }
+  /** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
+  async dailyNoteContent(settings, date) {
+    if (!settings.template)
+      return "";
+    const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
+    const template = this.app.vault.getAbstractFileByPath(templatePath);
+    if (!(template instanceof import_obsidian2.TFile))
+      return "";
+    const now = (0, import_obsidian2.moment)();
+    return (await this.app.vault.read(template)).replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt) => date.format(fmt)).replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt) => now.format(fmt)).replace(/{{\s*date\s*}}/gi, date.format(settings.format)).replace(/{{\s*time\s*}}/gi, now.format("HH:mm")).replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
   }
   renderActivity(card) {
     card.createEl("h2", { text: "Activity" });
@@ -434,6 +459,13 @@ var DashboardView = class extends import_obsidian2.ItemView {
 };
 
 // src/main.ts
+var BACKGROUNDS = {
+  paper: "\u7D19",
+  cork: "\u30B3\u30EB\u30AF\u30DC\u30FC\u30C9"
+};
+var DEFAULT_SETTINGS = {
+  background: "paper"
+};
 var FILTER_HOST_ID = "pencil-dashboard-svg-defs";
 function ensureSvgDefs() {
   if (document.getElementById(FILTER_HOST_ID))
@@ -473,8 +505,19 @@ function ensureSvgDefs() {
   document.body.appendChild(host);
 }
 var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
+  constructor() {
+    super(...arguments);
+    this.settings = { ...DEFAULT_SETTINGS };
+  }
   async onload() {
+    this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() };
     ensureSvgDefs();
+    this.addSettingTab(new PencilDashboardSettingTab(this.app, this));
+    this.addCommand({
+      id: "toggle-background",
+      name: "\u80CC\u666F\u3092\u5207\u308A\u66FF\u3048\uFF08\u7D19 \u21D4 \u30B3\u30EB\u30AF\u30DC\u30FC\u30C9\uFF09",
+      callback: () => this.setBackground(this.settings.background === "paper" ? "cork" : "paper")
+    });
     this.registerView(VIEW_TYPE_PENCIL_DASHBOARD, (leaf) => new DashboardView(leaf, this));
     this.addRibbonIcon("pencil", "Open pencil dashboard", () => this.activateView());
     this.addCommand({
@@ -486,6 +529,14 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
   onunload() {
     document.getElementById(FILTER_HOST_ID)?.remove();
   }
+  async setBackground(background) {
+    this.settings.background = background;
+    await this.saveData(this.settings);
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)) {
+      if (leaf.view instanceof DashboardView)
+        leaf.view.applyBackground();
+    }
+  }
   async activateView() {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_PENCIL_DASHBOARD)[0] ?? null;
@@ -494,5 +545,20 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
       await leaf.setViewState({ type: VIEW_TYPE_PENCIL_DASHBOARD, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+};
+var PencilDashboardSettingTab = class extends import_obsidian3.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new import_obsidian3.Setting(containerEl).setName("\u80CC\u666F").setDesc("\u30C0\u30C3\u30B7\u30E5\u30DC\u30FC\u30C9\u306E\u80CC\u666F\u3092\u9078\u3073\u307E\u3059\u3002").addDropdown((dropdown) => {
+      for (const [value, label] of Object.entries(BACKGROUNDS))
+        dropdown.addOption(value, label);
+      dropdown.setValue(this.plugin.settings.background).onChange((value) => this.plugin.setBackground(value));
+    });
   }
 };
