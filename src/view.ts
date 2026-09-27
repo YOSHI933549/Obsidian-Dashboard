@@ -12,6 +12,7 @@ import {
   DailyNoteSettings,
 } from "./data";
 import { iconSvg } from "./icons";
+import { Background, BACKGROUNDS } from "./backgrounds";
 
 export const VIEW_TYPE_PENCIL_DASHBOARD = "pencil-dashboard-view";
 
@@ -78,7 +79,12 @@ export class DashboardView extends ItemView {
   }
 
   applyBackground(): void {
-    this.containerEl.dataset.pdBg = this.plugin.settings.background;
+    const current = this.plugin.settings.background;
+    this.containerEl.dataset.pdBg = current;
+    this.contentEl.querySelectorAll<HTMLElement>(".pd-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.bg === current);
+      tab.setAttribute("aria-pressed", String(tab.dataset.bg === current));
+    });
   }
 
   private scheduleRefresh(): void {
@@ -93,17 +99,17 @@ export class DashboardView extends ItemView {
     this.contentEl.addClass("pd-surface");
     const root = this.contentEl.createDiv({ cls: "pd-root" });
 
-    root.createDiv({ cls: "pd-tabs" }, (tabs) => {
-      [1, 2, 3].forEach((n) => {
-        const tab = tabs.createEl("button", { cls: "pd-tab pd-sk pd-shade", text: String(n) });
-        if (n === 1) tab.addClass("active");
-        tab.addEventListener("click", () => {
-          tabs.querySelectorAll(".pd-tab").forEach((t) => t.removeClass("active"));
-          tab.addClass("active");
+    root.createDiv({ cls: "pd-tabs", attr: { role: "group", "aria-label": "背景" } }, (tabs) => {
+      (Object.entries(BACKGROUNDS) as [Background, string][]).forEach(([value, label], i) => {
+        const tab = tabs.createEl("button", {
+          cls: "pd-tab pd-sk pd-shade",
+          text: String(i + 1),
+          attr: { title: label, "aria-label": `背景: ${label}`, "data-bg": value },
         });
+        tab.addEventListener("click", () => this.plugin.setBackground(value));
       });
-      tabs.createEl("button", { cls: "pd-tab pd-sk pd-shade", attr: { "aria-label": "Add dashboard" } });
     });
+    this.applyBackground();
 
     this.renderHero(root);
 

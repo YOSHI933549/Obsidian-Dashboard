@@ -19,7 +19,6 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
-  BACKGROUNDS: () => BACKGROUNDS,
   default: () => PencilDashboardPlugin
 });
 module.exports = __toCommonJS(main_exports);
@@ -140,6 +139,12 @@ function iconSvg(name, cls = "pd-ico") {
   return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
 }
 
+// src/backgrounds.ts
+var BACKGROUNDS = {
+  paper: "\u7D19",
+  cork: "\u30B3\u30EB\u30AF\u30DC\u30FC\u30C9"
+};
+
 // src/view.ts
 var VIEW_TYPE_PENCIL_DASHBOARD = "pencil-dashboard-view";
 var MONTHS = [
@@ -204,7 +209,12 @@ var DashboardView = class extends import_obsidian2.ItemView {
       window.clearTimeout(this.refreshHandle);
   }
   applyBackground() {
-    this.containerEl.dataset.pdBg = this.plugin.settings.background;
+    const current = this.plugin.settings.background;
+    this.containerEl.dataset.pdBg = current;
+    this.contentEl.querySelectorAll(".pd-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.bg === current);
+      tab.setAttribute("aria-pressed", String(tab.dataset.bg === current));
+    });
   }
   scheduleRefresh() {
     if (this.refreshHandle)
@@ -216,18 +226,17 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.contentEl.empty();
     this.contentEl.addClass("pd-surface");
     const root = this.contentEl.createDiv({ cls: "pd-root" });
-    root.createDiv({ cls: "pd-tabs" }, (tabs) => {
-      [1, 2, 3].forEach((n) => {
-        const tab = tabs.createEl("button", { cls: "pd-tab pd-sk pd-shade", text: String(n) });
-        if (n === 1)
-          tab.addClass("active");
-        tab.addEventListener("click", () => {
-          tabs.querySelectorAll(".pd-tab").forEach((t) => t.removeClass("active"));
-          tab.addClass("active");
+    root.createDiv({ cls: "pd-tabs", attr: { role: "group", "aria-label": "\u80CC\u666F" } }, (tabs) => {
+      Object.entries(BACKGROUNDS).forEach(([value, label], i) => {
+        const tab = tabs.createEl("button", {
+          cls: "pd-tab pd-sk pd-shade",
+          text: String(i + 1),
+          attr: { title: label, "aria-label": `\u80CC\u666F: ${label}`, "data-bg": value }
         });
+        tab.addEventListener("click", () => this.plugin.setBackground(value));
       });
-      tabs.createEl("button", { cls: "pd-tab pd-sk pd-shade", attr: { "aria-label": "Add dashboard" } });
     });
+    this.applyBackground();
     this.renderHero(root);
     const grid = root.createDiv({ cls: "pd-grid" });
     const col1 = grid.createDiv({ cls: "pd-col" });
@@ -461,10 +470,6 @@ var DashboardView = class extends import_obsidian2.ItemView {
 };
 
 // src/main.ts
-var BACKGROUNDS = {
-  paper: "\u7D19",
-  cork: "\u30B3\u30EB\u30AF\u30DC\u30FC\u30C9"
-};
 var DEFAULT_SETTINGS = {
   background: "paper"
 };

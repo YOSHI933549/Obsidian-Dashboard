@@ -1,12 +1,6 @@
 import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
-
-export type Background = "paper" | "cork";
-
-export const BACKGROUNDS: Record<Background, string> = {
-  paper: "紙",
-  cork: "コルクボード",
-};
+import { Background, BACKGROUNDS } from "./backgrounds";
 
 interface PencilDashboardSettings {
   background: Background;
