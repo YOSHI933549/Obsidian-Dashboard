@@ -69,6 +69,8 @@ export class DashboardView extends ItemView {
   private clockHandle: number | null = null;
   /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
   private awaitingIndex: string | null = null;
+  /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
+  private stale = false;
   /** The Todo being written survives redraws (every vault change re-renders the whole view). */
   private draft: { text: string; priority: "high" | "medium" | null; due: string | null } = {
     text: "",
@@ -98,7 +100,9 @@ export class DashboardView extends ItemView {
     this.applyBackground();
     await this.render();
 
-    this.clockHandle = window.setInterval(() => this.renderClock(), 15000);
+    this.clockHandle = window.setInterval(() => {
+      if (this.isVisible()) this.renderClock();
+    }, 15000);
     this.registerInterval(this.clockHandle);
 
     // "changed" fires once a note is re-parsed, so a just-added checkbox is already in the cache.
@@ -112,6 +116,14 @@ export class DashboardView extends ItemView {
         }
       })
     );
+    // Coming back to the dashboard tab catches up on whatever changed while it was hidden.
+    const catchUp = () => {
+      if (!this.stale || !this.isVisible()) return;
+      this.stale = false;
+      this.render();
+    };
+    this.registerEvent(this.app.workspace.on("active-leaf-change", catchUp));
+    this.registerEvent(this.app.workspace.on("layout-change", catchUp));
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
@@ -133,10 +145,17 @@ export class DashboardView extends ItemView {
   private scheduleRefresh(): void {
     if (this.refreshHandle) window.clearTimeout(this.refreshHandle);
     this.refreshHandle = window.setTimeout(() => {
+      this.refreshHandle = null;
+      // Typing in a note fires a change every moment; a hidden dashboard only notes it and redraws when shown.
+      if (!this.isVisible()) this.stale = true;
       // Redrawing mid-typing would break an IME conversion, so wait until the Todo field is left or emptied.
-      if (this.isWritingTodo()) this.scheduleRefresh();
+      else if (this.isWritingTodo()) this.scheduleRefresh();
       else this.render();
-    }, 700);
+    }, 1000);
+  }
+
+  private isVisible(): boolean {
+    return this.containerEl.isShown();
   }
 
   private todoInput(): HTMLInputElement | null {

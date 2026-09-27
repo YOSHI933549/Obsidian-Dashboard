@@ -310,6 +310,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.clockHandle = null;
     /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
     this.awaitingIndex = null;
+    /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
+    this.stale = false;
     /** The Todo being written survives redraws (every vault change re-renders the whole view). */
     this.draft = {
       text: "",
@@ -331,7 +333,10 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.containerEl.addClass("pencil-dashboard-container");
     this.applyBackground();
     await this.render();
-    this.clockHandle = window.setInterval(() => this.renderClock(), 15e3);
+    this.clockHandle = window.setInterval(() => {
+      if (this.isVisible())
+        this.renderClock();
+    }, 15e3);
     this.registerInterval(this.clockHandle);
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
@@ -343,6 +348,14 @@ var DashboardView = class extends import_obsidian2.ItemView {
         }
       })
     );
+    const catchUp = () => {
+      if (!this.stale || !this.isVisible())
+        return;
+      this.stale = false;
+      this.render();
+    };
+    this.registerEvent(this.app.workspace.on("active-leaf-change", catchUp));
+    this.registerEvent(this.app.workspace.on("layout-change", catchUp));
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
@@ -363,11 +376,17 @@ var DashboardView = class extends import_obsidian2.ItemView {
     if (this.refreshHandle)
       window.clearTimeout(this.refreshHandle);
     this.refreshHandle = window.setTimeout(() => {
-      if (this.isWritingTodo())
+      this.refreshHandle = null;
+      if (!this.isVisible())
+        this.stale = true;
+      else if (this.isWritingTodo())
         this.scheduleRefresh();
       else
         this.render();
-    }, 700);
+    }, 1e3);
+  }
+  isVisible() {
+    return this.containerEl.isShown();
   }
   todoInput() {
     return this.contentEl.querySelector(".pd-todo-input");
