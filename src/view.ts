@@ -342,7 +342,7 @@ export class DashboardView extends ItemView {
     head.createEl("h2", { text: "Todo" });
     const sort = pdButton(head, { cls: "pd-sort pd-sk pd-shade" });
     sort.innerHTML = iconSvg("sort");
-    sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "Due" });
+    sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "期日" });
     sort.addEventListener("click", () => {
       this.sortBy = this.sortBy === "priority" ? "due" : "priority";
       this.render();
@@ -361,10 +361,7 @@ export class DashboardView extends ItemView {
     this.renderTodoForm(paper);
 
     const list = paper.createEl("ul", { cls: "pd-todo-list" });
-    if (this.todos.length === 0) {
-      list.createEl("li", { cls: "pd-muted", text: "上の行に書いて Enter で追加できます。" });
-      return;
-    }
+    if (this.todos.length === 0) return;
 
     const priorityRank = (t: TodoItem) => (t.priority === "high" ? 0 : t.priority === "medium" ? 1 : 2);
     const dueRank = (t: TodoItem) => (t.due ? moment(t.due, "YYYY-MM-DD").valueOf() : Infinity);
@@ -412,7 +409,7 @@ export class DashboardView extends ItemView {
     const add = pdButton(row, { cls: "pd-todo-plus", text: "+", attr: { title: "追加", "aria-label": "Todoを追加" } });
     const input = row.createEl("input", {
       cls: "pd-todo-input",
-      attr: { type: "text", placeholder: "新しいTodo…（Enterで追加）", "aria-label": "新しいTodo" },
+      attr: { type: "text", placeholder: "新しいTodo", "aria-label": "新しいTodo" },
     });
     input.value = this.draft.text;
     input.addEventListener("input", () => (this.draft.text = input.value));
@@ -436,7 +433,10 @@ export class DashboardView extends ItemView {
     });
 
     const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "期日" } });
-    due.createSpan({ text: this.draft.due ? this.formatDue(this.draft.due) : "Due" });
+    const dueText = this.draft.due
+      ? moment(this.draft.due, "YYYY-MM-DD").toDate().toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" })
+      : "期日";
+    due.createSpan({ text: dueText });
     if (this.draft.due) due.addClass("is-set");
     // A real date input sits invisibly inside so the system date picker opens on every platform.
     const picker = due.createEl("input", { attr: { type: "date", tabindex: "-1", "aria-hidden": "true" } });

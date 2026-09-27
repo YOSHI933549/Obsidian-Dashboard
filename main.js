@@ -474,7 +474,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     head.createEl("h2", { text: "Todo" });
     const sort = pdButton(head, { cls: "pd-sort pd-sk pd-shade" });
     sort.innerHTML = iconSvg("sort");
-    sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "Due" });
+    sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "\u671F\u65E5" });
     sort.addEventListener("click", () => {
       this.sortBy = this.sortBy === "priority" ? "due" : "priority";
       this.render();
@@ -492,10 +492,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const paper = card.createDiv({ cls: "pd-todo-paper" });
     this.renderTodoForm(paper);
     const list = paper.createEl("ul", { cls: "pd-todo-list" });
-    if (this.todos.length === 0) {
-      list.createEl("li", { cls: "pd-muted", text: "\u4E0A\u306E\u884C\u306B\u66F8\u3044\u3066 Enter \u3067\u8FFD\u52A0\u3067\u304D\u307E\u3059\u3002" });
+    if (this.todos.length === 0)
       return;
-    }
     const priorityRank = (t) => t.priority === "high" ? 0 : t.priority === "medium" ? 1 : 2;
     const dueRank = (t) => t.due ? (0, import_obsidian2.moment)(t.due, "YYYY-MM-DD").valueOf() : Infinity;
     const sorted = [...this.todos].sort(
@@ -535,7 +533,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const add = pdButton(row, { cls: "pd-todo-plus", text: "+", attr: { title: "\u8FFD\u52A0", "aria-label": "Todo\u3092\u8FFD\u52A0" } });
     const input = row.createEl("input", {
       cls: "pd-todo-input",
-      attr: { type: "text", placeholder: "\u65B0\u3057\u3044Todo\u2026\uFF08Enter\u3067\u8FFD\u52A0\uFF09", "aria-label": "\u65B0\u3057\u3044Todo" }
+      attr: { type: "text", placeholder: "\u65B0\u3057\u3044Todo", "aria-label": "\u65B0\u3057\u3044Todo" }
     });
     input.value = this.draft.text;
     input.addEventListener("input", () => this.draft.text = input.value);
@@ -557,7 +555,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
       this.render();
     });
     const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "\u671F\u65E5" } });
-    due.createSpan({ text: this.draft.due ? this.formatDue(this.draft.due) : "Due" });
+    const dueText = this.draft.due ? (0, import_obsidian2.moment)(this.draft.due, "YYYY-MM-DD").toDate().toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }) : "\u671F\u65E5";
+    due.createSpan({ text: dueText });
     if (this.draft.due)
       due.addClass("is-set");
     const picker = due.createEl("input", { attr: { type: "date", tabindex: "-1", "aria-hidden": "true" } });
