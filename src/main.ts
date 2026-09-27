@@ -1,19 +1,16 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, moment } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
 import { Background, BACKGROUNDS } from "./backgrounds";
-import { datedNotePath, getDailyNoteSettings } from "./data";
 
 interface PencilDashboardSettings {
   background: Background;
-  todoFolder: string;
-  /** moment format for the Todo note's name; blank means "same as the daily notes format". */
-  todoFormat: string;
+  /** The note Todos added on the dashboard go into, split under 進行中 / 完了 headings. */
+  todoNote: string;
 }
 
 const DEFAULT_SETTINGS: PencilDashboardSettings = {
   background: "paper",
-  todoFolder: "Todo",
-  todoFormat: "",
+  todoNote: "Todo.md",
 };
 
 const FILTER_HOST_ID = "pencil-dashboard-svg-defs";
@@ -97,10 +94,10 @@ export default class PencilDashboardPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  /** Where a Todo added on `date` is written, laid out like the daily notes (e.g. Todo/2026/09/2026-09-27.md). */
-  todoNotePath(date: moment.Moment): string {
-    const format = this.settings.todoFormat.trim() || getDailyNoteSettings(this.app).format;
-    return datedNotePath(this.settings.todoFolder, format, date);
+  /** The Todo note's vault path; a bare name like "Tasks/Todo" gets its .md added. */
+  todoNotePath(): string {
+    const name = this.settings.todoNote.trim().replace(/^\/+|\/+$/g, "") || DEFAULT_SETTINGS.todoNote;
+    return /\.md$/i.test(name) ? name : `${name}.md`;
   }
 
   async setBackground(background: Background): Promise<void> {
@@ -143,38 +140,16 @@ class PencilDashboardSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Todo").setHeading();
 
     new Setting(containerEl)
-      .setName("保存先フォルダー")
-      .setDesc("ダッシュボードで追加したTodoを入れるフォルダー。無ければ自動で作ります。")
+      .setName("Todoノート")
+      .setDesc("ダッシュボードで追加したTodoを書くノート。「進行中」「完了」の見出しで分け、無ければ自動で作ります。")
       .addText((text) =>
         text
-          .setPlaceholder("Todo")
-          .setValue(this.plugin.settings.todoFolder)
+          .setPlaceholder(DEFAULT_SETTINGS.todoNote)
+          .setValue(this.plugin.settings.todoNote)
           .onChange(async (value) => {
-            this.plugin.settings.todoFolder = value.trim();
+            this.plugin.settings.todoNote = value.trim();
             await this.plugin.saveSettings();
-            updateExample();
           })
       );
-
-    new Setting(containerEl)
-      .setName("ノート名の書式")
-      .setDesc(
-        "デイリーノートと同じ書き方です。空欄ならデイリーノートの書式と同じになります" +
-          "（例: YYYY/MM/YYYY-MM-DD で日ごと、YYYY/YYYY-MM で月ごと、[Inbox] で1つのノートにまとめる）。"
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder(getDailyNoteSettings(this.app).format)
-          .setValue(this.plugin.settings.todoFormat)
-          .onChange(async (value) => {
-            this.plugin.settings.todoFormat = value.trim();
-            await this.plugin.saveSettings();
-            updateExample();
-          })
-      );
-
-    const example = new Setting(containerEl).setName("今日追加すると");
-    const updateExample = () => example.setDesc(`${this.plugin.todoNotePath(moment())} の末尾に書き足されます。`);
-    updateExample();
   }
 }
