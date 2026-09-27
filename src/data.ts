@@ -77,18 +77,26 @@ export function buildActivity(app: App, days: number): number[] {
 export interface TodoItem {
   file: TFile;
   line: number;
+  /** The whole line as read, so it can be found again after lines above it move. */
+  raw: string;
   text: string;
   checked: boolean;
   priority: "high" | "medium" | null;
   due: string | null;
 }
 
+/** The two headings the Todo note is split into. */
+export const ACTIVE_HEADING = "進行中";
+export const DONE_HEADING = "完了";
+
 const CHECKBOX_RE = /^(\s*-\s*\[)(.)(\]\s*)(.*)$/;
 const PRIORITY_RE = /#(high|medium)\b/i;
 const DUE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
+const HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+const LIST_ITEM_RE = /^(?:[-*+]|\d+[.)])\s/;
 
-/** Scans every note's cached list items for markdown checkboxes and reads back their raw line. */
-export async function collectTodos(app: App, limit: number): Promise<TodoItem[]> {
+/** Every note's checkboxes, most recently modified notes first and in line order within a note. */
+export async function collectTodos(app: App): Promise<TodoItem[]> {
   const todos: TodoItem[] = [];
   const files = app.vault.getMarkdownFiles();
 
@@ -118,6 +126,7 @@ export async function collectTodos(app: App, limit: number): Promise<TodoItem[]>
       todos.push({
         file,
         line: lineNo,
+        raw,
         text,
         checked: match[2].toLowerCase() === "x",
         priority,
@@ -127,7 +136,7 @@ export async function collectTodos(app: App, limit: number): Promise<TodoItem[]>
   }
 
   todos.sort((a, b) => b.file.stat.mtime - a.file.stat.mtime);
-  return todos.slice(0, limit);
+  return todos;
 }
 
 /** Builds a checkbox line in the same `#high` / `📅 YYYY-MM-DD` syntax collectTodos reads back. */
@@ -138,30 +147,102 @@ export function formatTodoLine(text: string, priority: "high" | "medium" | null,
   return parts.join(" ");
 }
 
-/** Appends a line to the note at `path`, creating the note and its folders when missing. */
-export async function appendLine(app: App, path: string, line: string): Promise<TFile> {
+function headingAt(line: string): { level: number; text: string } | null {
+  const match = HEADING_RE.exec(line);
+  return match ? { level: match[1].length, text: match[2] } : null;
+}
+
+function findHeading(lines: string[], name: string): { index: number; level: number } | null {
+  for (let i = 0; i < lines.length; i++) {
+    const heading = headingAt(lines[i]);
+    if (heading?.text === name) return { index: i, level: heading.level };
+  }
+  return null;
+}
+
+/** Which status heading `lineNo` sits under, counting sub-headings like `### 仕事` beneath it. */
+function statusHeadingOf(lines: string[], lineNo: number): string | null {
+  let level = 7;
+  for (let i = lineNo - 1; i >= 0 && level > 1; i--) {
+    const heading = headingAt(lines[i]);
+    if (!heading || heading.level >= level) continue;
+    if (heading.text === ACTIVE_HEADING || heading.text === DONE_HEADING) return heading.text;
+    level = heading.level;
+  }
+  return null;
+}
+
+/** Returns the index of the `name` heading, adding it (進行中 above 完了, 完了 at the end) when missing. */
+function ensureHeading(lines: string[], name: string): number {
+  const found = findHeading(lines, name);
+  if (found) return found.index;
+  const other = findHeading(lines, name === ACTIVE_HEADING ? DONE_HEADING : ACTIVE_HEADING);
+  const heading = `${"#".repeat(other?.level ?? 2)} ${name}`;
+  if (name === ACTIVE_HEADING && other) {
+    lines.splice(other.index, 0, heading, "");
+    return other.index;
+  }
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length > 0) lines.push("");
+  lines.push(heading, "");
+  return lines.length - 2;
+}
+
+/** Newest first: just above the first item under the heading, or after any text written under it. */
+function topOfSection(lines: string[], headingIndex: number): number {
+  let lastText = headingIndex;
+  for (let i = headingIndex + 1; i < lines.length; i++) {
+    if (headingAt(lines[i])) break;
+    if (LIST_ITEM_RE.test(lines[i])) return i;
+    if (lines[i].trim()) lastText = i;
+  }
+  return lastText + 1;
+}
+
+/** Writes a new Todo at the top of the note's 進行中 section, creating the note (and its folders) when missing. */
+export async function addTodoToNote(app: App, path: string, line: string): Promise<TFile> {
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing instanceof TFile) {
     await app.vault.process(existing, (content) => {
-      const base = content === "" || content.endsWith("\n") ? content : `${content}\n`;
-      return `${base}${line}\n`;
+      const lines = content.split("\n");
+      lines.splice(topOfSection(lines, ensureHeading(lines, ACTIVE_HEADING)), 0, line);
+      return lines.join("\n");
     });
     return existing;
   }
   await ensureParentFolder(app, path);
-  return app.vault.create(path, `${line}\n`);
+  return app.vault.create(path, `## ${ACTIVE_HEADING}\n${line}\n\n## ${DONE_HEADING}\n`);
 }
 
-/** Flips one checkbox in place by rewriting only its line. */
-export async function toggleTodo(app: App, todo: TodoItem): Promise<void> {
+/**
+ * Checks or unchecks a Todo. In the Todo note a top-level item also moves, with its indented lines,
+ * to the top of 完了 (or back to the top of 進行中); anywhere else only the checkbox changes.
+ * Returns false when the line is no longer in the note. `todo` is updated to match what was written.
+ */
+export async function setTodoDone(app: App, todo: TodoItem, done: boolean, todoNotePath: string): Promise<boolean> {
+  let written = false;
   await app.vault.process(todo.file, (content) => {
     const lines = content.split("\n");
-    const line = lines[todo.line];
-    if (!line) return content;
-    const match = CHECKBOX_RE.exec(line);
+    const at = lines[todo.line] === todo.raw ? todo.line : lines.indexOf(todo.raw);
+    const match = at >= 0 ? CHECKBOX_RE.exec(lines[at]) : null;
     if (!match) return content;
-    const mark = todo.checked ? " " : "x";
-    lines[todo.line] = `${match[1]}${mark}${match[3]}${match[4]}`;
+
+    const updated = `${match[1]}${done ? "x" : " "}${match[3]}${match[4]}`;
+    const target = done ? DONE_HEADING : ACTIVE_HEADING;
+    let line = at;
+    if (todo.file.path !== todoNotePath || /^\s/.test(updated) || statusHeadingOf(lines, at) === target) {
+      lines[at] = updated;
+    } else {
+      let end = at + 1;
+      while (end < lines.length && /^\s+\S/.test(lines[end])) end++;
+      const block = lines.splice(at, end - at);
+      block[0] = updated;
+      line = topOfSection(lines, ensureHeading(lines, target));
+      lines.splice(line, 0, ...block);
+    }
+    Object.assign(todo, { line, raw: updated, checked: done });
+    written = true;
     return lines.join("\n");
   });
+  return written;
 }

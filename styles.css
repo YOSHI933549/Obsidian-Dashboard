@@ -105,7 +105,7 @@
 }
 
 /* Graphite grain and a slight wobble on the handwriting itself */
-.pd-root :is(h2, h3, .pd-greet, .pd-date, .pd-wd, .pd-n, .pd-fav span, .pd-search-placeholder, .pd-new-note, .pd-legend > span, .pd-todo-where, .pd-todo-text, .pd-due) {
+.pd-root :is(h2, h3, .pd-greet, .pd-date, .pd-wd, .pd-n, .pd-fav span, .pd-search-placeholder, .pd-new-note, .pd-legend > span, .pd-todo-where, .pd-todo-section, .pd-todo-text, .pd-due) {
   filter: url(#pd-text);
 }
 
@@ -489,14 +489,36 @@
 }
 
 .pd-todo-list {
-  flex: 1;
-  min-height: calc(var(--pd-lh) * 7);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* The first ruled line is where a new Todo gets written */
+/* Every row is one ruled line tall, so only the last list may stretch without leaving the lines */
+.pd-todo-active {
+  min-height: calc(var(--pd-lh) * 4);
+}
+
+.pd-todo-done {
+  flex: 1;
+  min-height: var(--pd-lh);
+}
+
+/* 進行中 / 完了, written on a line of their own */
+.pd-todo-section {
+  display: flex;
+  align-items: center;
+  height: var(--pd-lh);
+  padding-left: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pd-graphite);
+  text-decoration: underline 1.5px var(--pd-graphite-soft);
+  text-underline-offset: 6px;
+}
+
+/* The line under 進行中 is where a new Todo gets written */
 .pd-todo-add {
   display: flex;
   align-items: center;
@@ -648,8 +670,8 @@
     grid-row: auto;
   }
 
-  .pd-todo-list {
-    min-height: 0;
+  .pd-todo-active {
+    min-height: var(--pd-lh);
   }
 }
 

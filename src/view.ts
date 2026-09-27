@@ -7,12 +7,14 @@ import {
   collectFavorites,
   buildActivity,
   collectTodos,
-  toggleTodo,
+  setTodoDone,
   TodoItem,
   DailyNoteSettings,
   ensureParentFolder,
   formatTodoLine,
-  appendLine,
+  addTodoToNote,
+  ACTIVE_HEADING,
+  DONE_HEADING,
 } from "./data";
 import { iconSvg } from "./icons";
 import { Background, BACKGROUNDS } from "./backgrounds";
@@ -25,7 +27,8 @@ const MONTHS = [
 ];
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const ACTIVITY_WEEKS = 20;
-const TODO_LIMIT = 60;
+const ACTIVE_LIMIT = 60;
+const DONE_LIMIT = 5;
 
 const QUICK_ACTIONS: { icon: Parameters<typeof iconSvg>[0]; title: string; command?: string }[] = [
   { icon: "folder", title: "Files", command: "file-explorer:open" },
@@ -64,6 +67,8 @@ export class DashboardView extends ItemView {
   private todos: TodoItem[] = [];
   private refreshHandle: number | null = null;
   private clockHandle: number | null = null;
+  /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
+  private awaitingIndex: string | null = null;
   /** The Todo being written survives redraws (every vault change re-renders the whole view). */
   private draft: { text: string; priority: "high" | "medium" | null; due: string | null } = {
     text: "",
@@ -97,7 +102,16 @@ export class DashboardView extends ItemView {
     this.registerInterval(this.clockHandle);
 
     // "changed" fires once a note is re-parsed, so a just-added checkbox is already in the cache.
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRefresh()));
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file) => {
+        if (file.path !== this.awaitingIndex || this.isWritingTodo()) {
+          this.scheduleRefresh();
+        } else {
+          this.awaitingIndex = null;
+          this.render();
+        }
+      })
+    );
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
@@ -135,8 +149,12 @@ export class DashboardView extends ItemView {
   }
 
   private async render(): Promise<void> {
-    this.todos = await collectTodos(this.app, TODO_LIMIT);
+    this.todos = await collectTodos(this.app);
+    this.draw();
+  }
 
+  /** Redraws from the Todos already read; right after a write the metadata cache still has the old line numbers. */
+  private draw(): void {
     const input = this.todoInput();
     const refocusTodo = !!input && input.ownerDocument.activeElement === input;
 
@@ -234,11 +252,11 @@ export class DashboardView extends ItemView {
     const next = pdButton(head, { cls: "pd-sk pd-shade", text: "›" });
     prev.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().subtract(1, "month");
-      this.render();
+      this.draw();
     });
     next.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().add(1, "month");
-      this.render();
+      this.draw();
     });
 
     const grid = card.createDiv({ cls: "pd-cal-grid" });
@@ -345,11 +363,15 @@ export class DashboardView extends ItemView {
     sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "期日" });
     sort.addEventListener("click", () => {
       this.sortBy = this.sortBy === "priority" ? "due" : "priority";
-      this.render();
+      this.draw();
     });
 
-    const target = this.plugin.todoNotePath(moment());
-    const where = card.createEl("a", { cls: "pd-todo-where", text: `→ ${target}`, attr: { title: "追加先のノートを開く" } });
+    const target = this.plugin.todoNotePath();
+    const where = card.createEl("a", {
+      cls: "pd-todo-where",
+      text: `→ ${target.replace(/\.md$/i, "")}`,
+      attr: { title: "Todoノートを開く" },
+    });
     where.addEventListener("click", async (evt) => {
       evt.preventDefault();
       const file = this.app.vault.getAbstractFileByPath(target);
@@ -358,51 +380,75 @@ export class DashboardView extends ItemView {
     });
 
     const paper = card.createDiv({ cls: "pd-todo-paper" });
+
+    paper.createDiv({ cls: "pd-todo-section", text: ACTIVE_HEADING, attr: { role: "heading", "aria-level": "3" } });
     this.renderTodoForm(paper);
-
-    const list = paper.createEl("ul", { cls: "pd-todo-list" });
-    if (this.todos.length === 0) return;
-
     const priorityRank = (t: TodoItem) => (t.priority === "high" ? 0 : t.priority === "medium" ? 1 : 2);
     const dueRank = (t: TodoItem) => (t.due ? moment(t.due, "YYYY-MM-DD").valueOf() : Infinity);
-    const sorted = [...this.todos].sort((a, b) =>
-      this.sortBy === "priority" ? priorityRank(a) - priorityRank(b) : dueRank(a) - dueRank(b)
-    );
+    const active = this.todos
+      .filter((t) => !t.checked)
+      .slice(0, ACTIVE_LIMIT)
+      .sort((a, b) => (this.sortBy === "priority" ? priorityRank(a) - priorityRank(b) : dueRank(a) - dueRank(b)));
+    const activeList = paper.createEl("ul", { cls: "pd-todo-list pd-todo-active" });
+    for (const todo of active) this.renderTodoItem(activeList, todo);
 
-    for (const todo of sorted) {
-      const li = list.createEl("li");
-      if (todo.checked) li.addClass("done");
+    paper.createDiv({ cls: "pd-todo-section", text: DONE_HEADING, attr: { role: "heading", "aria-level": "3" } });
+    const doneList = paper.createEl("ul", { cls: "pd-todo-list pd-todo-done" });
+    for (const todo of this.todos.filter((t) => t.checked).slice(0, DONE_LIMIT)) this.renderTodoItem(doneList, todo);
+  }
 
-      const check = pdButton(li, {
-        cls: "pd-check pd-sk pd-shade",
-        attr: { role: "checkbox", "aria-checked": String(todo.checked) },
-      });
-      check.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${
-        todo.checked ? '<path d="M3 11l4.5 5L18 2"/>' : ""
-      }</svg>`;
-      check.addEventListener("click", async () => {
-        await toggleTodo(this.app, todo);
-        await this.render();
-      });
+  private renderTodoItem(list: HTMLElement, todo: TodoItem): void {
+    const li = list.createEl("li");
+    if (todo.checked) li.addClass("done");
 
-      const text = li.createEl("a", { cls: "pd-todo-text", text: todo.text || "(no text)" });
-      text.addEventListener("click", async (evt) => {
-        evt.preventDefault();
-        const leaf = this.app.workspace.getLeaf(false);
-        await leaf.openFile(todo.file);
-        const view = leaf.view as any;
-        view?.editor?.setCursor?.({ line: todo.line, ch: 0 });
-      });
+    const check = pdButton(li, {
+      cls: "pd-check pd-sk pd-shade",
+      attr: { role: "checkbox", "aria-checked": String(todo.checked) },
+    });
+    const drawTick = (done: boolean) =>
+      (check.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${done ? '<path d="M3 11l4.5 5L18 2"/>' : ""}</svg>`);
+    drawTick(todo.checked);
+    check.addEventListener("click", () => {
+      const done = !todo.checked;
+      // Tick the box now; the item moves between 進行中 and 完了 once Obsidian has re-read the note.
+      li.toggleClass("done", done);
+      check.setAttribute("aria-checked", String(done));
+      drawTick(done);
+      this.setDone(todo, done);
+    });
 
-      if (todo.priority) {
-        li.createSpan({ cls: `pd-tag pd-sk pd-${todo.priority}`, text: todo.priority === "high" ? "High" : "Medium" });
-      } else if (todo.due) {
-        li.createSpan({ cls: "pd-due", text: this.formatDue(todo.due) });
-      }
+    const text = li.createEl("a", { cls: "pd-todo-text", text: todo.text || "(no text)" });
+    text.addEventListener("click", async (evt) => {
+      evt.preventDefault();
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(todo.file);
+      const view = leaf.view as any;
+      view?.editor?.setCursor?.({ line: todo.line, ch: 0 });
+    });
+
+    if (todo.checked) return;
+    if (todo.priority) {
+      li.createSpan({ cls: `pd-tag pd-sk pd-${todo.priority}`, text: todo.priority === "high" ? "High" : "Medium" });
+    } else if (todo.due) {
+      li.createSpan({ cls: "pd-due", text: this.formatDue(todo.due) });
     }
   }
 
-  /** The first ruled line of the Todo card: write, optionally tag a priority / due date, Enter to add. */
+  private async setDone(todo: TodoItem, done: boolean): Promise<void> {
+    this.awaitingIndex = todo.file.path;
+    let written = false;
+    try {
+      written = await setTodoDone(this.app, todo, done, this.plugin.todoNotePath());
+    } catch (err) {
+      console.error(err);
+    }
+    if (written) return;
+    this.awaitingIndex = null;
+    new Notice("このTodoはノートの中で見つかりませんでした");
+    await this.render();
+  }
+
+  /** The line under 進行中: write, optionally tag a priority / due date, Enter to add. */
   private renderTodoForm(paper: HTMLElement): void {
     const row = paper.createDiv({ cls: "pd-todo-add" });
 
@@ -429,7 +475,7 @@ export class DashboardView extends ItemView {
     });
     flag.addEventListener("click", () => {
       this.draft.priority = priority === null ? "high" : priority === "high" ? "medium" : null;
-      this.render();
+      this.draw();
     });
 
     const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "期日" } });
@@ -443,7 +489,7 @@ export class DashboardView extends ItemView {
     if (this.draft.due) picker.value = this.draft.due;
     picker.addEventListener("change", () => {
       this.draft.due = picker.value || null;
-      this.render();
+      this.draw();
     });
     due.addEventListener("click", () => {
       try {
@@ -457,16 +503,19 @@ export class DashboardView extends ItemView {
   private async addTodo(): Promise<void> {
     const text = this.draft.text.trim();
     if (!text) return;
-    const path = this.plugin.todoNotePath(moment());
+    const path = this.plugin.todoNotePath();
+    this.awaitingIndex = path;
     try {
-      await appendLine(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
+      await addTodoToNote(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
     } catch (err) {
+      this.awaitingIndex = null;
       console.error(err);
       new Notice(`Todoを追加できませんでした: ${path}`);
       return;
     }
     this.draft = { text: "", priority: null, due: null };
-    await this.render();
+    // The new Todo appears once Obsidian has re-read the note; until then only the field is cleared.
+    this.draw();
     this.todoInput()?.focus();
   }
 

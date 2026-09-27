@@ -78,10 +78,14 @@ function buildActivity(app, days) {
   }
   return counts;
 }
+var ACTIVE_HEADING = "\u9032\u884C\u4E2D";
+var DONE_HEADING = "\u5B8C\u4E86";
 var CHECKBOX_RE = /^(\s*-\s*\[)(.)(\]\s*)(.*)$/;
 var PRIORITY_RE = /#(high|medium)\b/i;
 var DUE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
-async function collectTodos(app, limit) {
+var HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+var LIST_ITEM_RE = /^(?:[-*+]|\d+[.)])\s/;
+async function collectTodos(app) {
   const todos = [];
   const files = app.vault.getMarkdownFiles();
   for (const file of files) {
@@ -108,6 +112,7 @@ async function collectTodos(app, limit) {
       todos.push({
         file,
         line: lineNo,
+        raw,
         text,
         checked: match[2].toLowerCase() === "x",
         priority,
@@ -116,7 +121,7 @@ async function collectTodos(app, limit) {
     }
   }
   todos.sort((a, b) => b.file.stat.mtime - a.file.stat.mtime);
-  return todos.slice(0, limit);
+  return todos;
 }
 function formatTodoLine(text, priority, due) {
   const parts = [`- [ ] ${text.trim()}`];
@@ -126,34 +131,103 @@ function formatTodoLine(text, priority, due) {
     parts.push(`\u{1F4C5} ${due}`);
   return parts.join(" ");
 }
-async function appendLine(app, path, line) {
+function headingAt(line) {
+  const match = HEADING_RE.exec(line);
+  return match ? { level: match[1].length, text: match[2] } : null;
+}
+function findHeading(lines, name) {
+  for (let i = 0; i < lines.length; i++) {
+    const heading = headingAt(lines[i]);
+    if (heading?.text === name)
+      return { index: i, level: heading.level };
+  }
+  return null;
+}
+function statusHeadingOf(lines, lineNo) {
+  let level = 7;
+  for (let i = lineNo - 1; i >= 0 && level > 1; i--) {
+    const heading = headingAt(lines[i]);
+    if (!heading || heading.level >= level)
+      continue;
+    if (heading.text === ACTIVE_HEADING || heading.text === DONE_HEADING)
+      return heading.text;
+    level = heading.level;
+  }
+  return null;
+}
+function ensureHeading(lines, name) {
+  const found = findHeading(lines, name);
+  if (found)
+    return found.index;
+  const other = findHeading(lines, name === ACTIVE_HEADING ? DONE_HEADING : ACTIVE_HEADING);
+  const heading = `${"#".repeat(other?.level ?? 2)} ${name}`;
+  if (name === ACTIVE_HEADING && other) {
+    lines.splice(other.index, 0, heading, "");
+    return other.index;
+  }
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "")
+    lines.pop();
+  if (lines.length > 0)
+    lines.push("");
+  lines.push(heading, "");
+  return lines.length - 2;
+}
+function topOfSection(lines, headingIndex) {
+  let lastText = headingIndex;
+  for (let i = headingIndex + 1; i < lines.length; i++) {
+    if (headingAt(lines[i]))
+      break;
+    if (LIST_ITEM_RE.test(lines[i]))
+      return i;
+    if (lines[i].trim())
+      lastText = i;
+  }
+  return lastText + 1;
+}
+async function addTodoToNote(app, path, line) {
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing instanceof import_obsidian.TFile) {
     await app.vault.process(existing, (content) => {
-      const base = content === "" || content.endsWith("\n") ? content : `${content}
-`;
-      return `${base}${line}
-`;
+      const lines = content.split("\n");
+      lines.splice(topOfSection(lines, ensureHeading(lines, ACTIVE_HEADING)), 0, line);
+      return lines.join("\n");
     });
     return existing;
   }
   await ensureParentFolder(app, path);
-  return app.vault.create(path, `${line}
+  return app.vault.create(path, `## ${ACTIVE_HEADING}
+${line}
+
+## ${DONE_HEADING}
 `);
 }
-async function toggleTodo(app, todo) {
+async function setTodoDone(app, todo, done, todoNotePath) {
+  let written = false;
   await app.vault.process(todo.file, (content) => {
     const lines = content.split("\n");
-    const line = lines[todo.line];
-    if (!line)
-      return content;
-    const match = CHECKBOX_RE.exec(line);
+    const at = lines[todo.line] === todo.raw ? todo.line : lines.indexOf(todo.raw);
+    const match = at >= 0 ? CHECKBOX_RE.exec(lines[at]) : null;
     if (!match)
       return content;
-    const mark = todo.checked ? " " : "x";
-    lines[todo.line] = `${match[1]}${mark}${match[3]}${match[4]}`;
+    const updated = `${match[1]}${done ? "x" : " "}${match[3]}${match[4]}`;
+    const target = done ? DONE_HEADING : ACTIVE_HEADING;
+    let line = at;
+    if (todo.file.path !== todoNotePath || /^\s/.test(updated) || statusHeadingOf(lines, at) === target) {
+      lines[at] = updated;
+    } else {
+      let end = at + 1;
+      while (end < lines.length && /^\s+\S/.test(lines[end]))
+        end++;
+      const block = lines.splice(at, end - at);
+      block[0] = updated;
+      line = topOfSection(lines, ensureHeading(lines, target));
+      lines.splice(line, 0, ...block);
+    }
+    Object.assign(todo, { line, raw: updated, checked: done });
+    written = true;
     return lines.join("\n");
   });
+  return written;
 }
 
 // src/icons.ts
@@ -199,7 +273,8 @@ var MONTHS = [
 ];
 var WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 var ACTIVITY_WEEKS = 20;
-var TODO_LIMIT = 60;
+var ACTIVE_LIMIT = 60;
+var DONE_LIMIT = 5;
 var QUICK_ACTIONS = [
   { icon: "folder", title: "Files", command: "file-explorer:open" },
   { icon: "file-text", title: "New note", command: "file-explorer:new-file" },
@@ -233,6 +308,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.todos = [];
     this.refreshHandle = null;
     this.clockHandle = null;
+    /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
+    this.awaitingIndex = null;
     /** The Todo being written survives redraws (every vault change re-renders the whole view). */
     this.draft = {
       text: "",
@@ -256,7 +333,16 @@ var DashboardView = class extends import_obsidian2.ItemView {
     await this.render();
     this.clockHandle = window.setInterval(() => this.renderClock(), 15e3);
     this.registerInterval(this.clockHandle);
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRefresh()));
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file) => {
+        if (file.path !== this.awaitingIndex || this.isWritingTodo()) {
+          this.scheduleRefresh();
+        } else {
+          this.awaitingIndex = null;
+          this.render();
+        }
+      })
+    );
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
@@ -291,7 +377,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
     return !!input && input.ownerDocument.activeElement === input && input.value !== "";
   }
   async render() {
-    this.todos = await collectTodos(this.app, TODO_LIMIT);
+    this.todos = await collectTodos(this.app);
+    this.draw();
+  }
+  /** Redraws from the Todos already read; right after a write the metadata cache still has the old line numbers. */
+  draw() {
     const input = this.todoInput();
     const refocusTodo = !!input && input.ownerDocument.activeElement === input;
     this.contentEl.empty();
@@ -373,11 +463,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const next = pdButton(head, { cls: "pd-sk pd-shade", text: "\u203A" });
     prev.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().subtract(1, "month");
-      this.render();
+      this.draw();
     });
     next.addEventListener("click", () => {
       this.viewMonth = this.viewMonth.clone().add(1, "month");
-      this.render();
+      this.draw();
     });
     const grid = card.createDiv({ cls: "pd-cal-grid" });
     for (const w of WEEKDAYS)
@@ -477,10 +567,14 @@ var DashboardView = class extends import_obsidian2.ItemView {
     sort.createSpan({ text: this.sortBy === "priority" ? "Priority" : "\u671F\u65E5" });
     sort.addEventListener("click", () => {
       this.sortBy = this.sortBy === "priority" ? "due" : "priority";
-      this.render();
+      this.draw();
     });
-    const target = this.plugin.todoNotePath((0, import_obsidian2.moment)());
-    const where = card.createEl("a", { cls: "pd-todo-where", text: `\u2192 ${target}`, attr: { title: "\u8FFD\u52A0\u5148\u306E\u30CE\u30FC\u30C8\u3092\u958B\u304F" } });
+    const target = this.plugin.todoNotePath();
+    const where = card.createEl("a", {
+      cls: "pd-todo-where",
+      text: `\u2192 ${target.replace(/\.md$/i, "")}`,
+      attr: { title: "Todo\u30CE\u30FC\u30C8\u3092\u958B\u304F" }
+    });
     where.addEventListener("click", async (evt) => {
       evt.preventDefault();
       const file = this.app.vault.getAbstractFileByPath(target);
@@ -490,44 +584,67 @@ var DashboardView = class extends import_obsidian2.ItemView {
         new import_obsidian2.Notice("\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002Todo\u3092\u8FFD\u52A0\u3059\u308B\u3068\u4F5C\u3089\u308C\u307E\u3059");
     });
     const paper = card.createDiv({ cls: "pd-todo-paper" });
+    paper.createDiv({ cls: "pd-todo-section", text: ACTIVE_HEADING, attr: { role: "heading", "aria-level": "3" } });
     this.renderTodoForm(paper);
-    const list = paper.createEl("ul", { cls: "pd-todo-list" });
-    if (this.todos.length === 0)
-      return;
     const priorityRank = (t) => t.priority === "high" ? 0 : t.priority === "medium" ? 1 : 2;
     const dueRank = (t) => t.due ? (0, import_obsidian2.moment)(t.due, "YYYY-MM-DD").valueOf() : Infinity;
-    const sorted = [...this.todos].sort(
-      (a, b) => this.sortBy === "priority" ? priorityRank(a) - priorityRank(b) : dueRank(a) - dueRank(b)
-    );
-    for (const todo of sorted) {
-      const li = list.createEl("li");
-      if (todo.checked)
-        li.addClass("done");
-      const check = pdButton(li, {
-        cls: "pd-check pd-sk pd-shade",
-        attr: { role: "checkbox", "aria-checked": String(todo.checked) }
-      });
-      check.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${todo.checked ? '<path d="M3 11l4.5 5L18 2"/>' : ""}</svg>`;
-      check.addEventListener("click", async () => {
-        await toggleTodo(this.app, todo);
-        await this.render();
-      });
-      const text = li.createEl("a", { cls: "pd-todo-text", text: todo.text || "(no text)" });
-      text.addEventListener("click", async (evt) => {
-        evt.preventDefault();
-        const leaf = this.app.workspace.getLeaf(false);
-        await leaf.openFile(todo.file);
-        const view = leaf.view;
-        view?.editor?.setCursor?.({ line: todo.line, ch: 0 });
-      });
-      if (todo.priority) {
-        li.createSpan({ cls: `pd-tag pd-sk pd-${todo.priority}`, text: todo.priority === "high" ? "High" : "Medium" });
-      } else if (todo.due) {
-        li.createSpan({ cls: "pd-due", text: this.formatDue(todo.due) });
-      }
+    const active = this.todos.filter((t) => !t.checked).slice(0, ACTIVE_LIMIT).sort((a, b) => this.sortBy === "priority" ? priorityRank(a) - priorityRank(b) : dueRank(a) - dueRank(b));
+    const activeList = paper.createEl("ul", { cls: "pd-todo-list pd-todo-active" });
+    for (const todo of active)
+      this.renderTodoItem(activeList, todo);
+    paper.createDiv({ cls: "pd-todo-section", text: DONE_HEADING, attr: { role: "heading", "aria-level": "3" } });
+    const doneList = paper.createEl("ul", { cls: "pd-todo-list pd-todo-done" });
+    for (const todo of this.todos.filter((t) => t.checked).slice(0, DONE_LIMIT))
+      this.renderTodoItem(doneList, todo);
+  }
+  renderTodoItem(list, todo) {
+    const li = list.createEl("li");
+    if (todo.checked)
+      li.addClass("done");
+    const check = pdButton(li, {
+      cls: "pd-check pd-sk pd-shade",
+      attr: { role: "checkbox", "aria-checked": String(todo.checked) }
+    });
+    const drawTick = (done) => check.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${done ? '<path d="M3 11l4.5 5L18 2"/>' : ""}</svg>`;
+    drawTick(todo.checked);
+    check.addEventListener("click", () => {
+      const done = !todo.checked;
+      li.toggleClass("done", done);
+      check.setAttribute("aria-checked", String(done));
+      drawTick(done);
+      this.setDone(todo, done);
+    });
+    const text = li.createEl("a", { cls: "pd-todo-text", text: todo.text || "(no text)" });
+    text.addEventListener("click", async (evt) => {
+      evt.preventDefault();
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(todo.file);
+      const view = leaf.view;
+      view?.editor?.setCursor?.({ line: todo.line, ch: 0 });
+    });
+    if (todo.checked)
+      return;
+    if (todo.priority) {
+      li.createSpan({ cls: `pd-tag pd-sk pd-${todo.priority}`, text: todo.priority === "high" ? "High" : "Medium" });
+    } else if (todo.due) {
+      li.createSpan({ cls: "pd-due", text: this.formatDue(todo.due) });
     }
   }
-  /** The first ruled line of the Todo card: write, optionally tag a priority / due date, Enter to add. */
+  async setDone(todo, done) {
+    this.awaitingIndex = todo.file.path;
+    let written = false;
+    try {
+      written = await setTodoDone(this.app, todo, done, this.plugin.todoNotePath());
+    } catch (err) {
+      console.error(err);
+    }
+    if (written)
+      return;
+    this.awaitingIndex = null;
+    new import_obsidian2.Notice("\u3053\u306ETodo\u306F\u30CE\u30FC\u30C8\u306E\u4E2D\u3067\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F");
+    await this.render();
+  }
+  /** The line under 進行中: write, optionally tag a priority / due date, Enter to add. */
   renderTodoForm(paper) {
     const row = paper.createDiv({ cls: "pd-todo-add" });
     const add = pdButton(row, { cls: "pd-todo-plus", text: "+", attr: { title: "\u8FFD\u52A0", "aria-label": "Todo\u3092\u8FFD\u52A0" } });
@@ -552,7 +669,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     });
     flag.addEventListener("click", () => {
       this.draft.priority = priority === null ? "high" : priority === "high" ? "medium" : null;
-      this.render();
+      this.draw();
     });
     const due = pdButton(row, { cls: "pd-tag pd-sk pd-shade pd-todo-opt pd-todo-due", attr: { title: "\u671F\u65E5" } });
     const dueText = this.draft.due ? (0, import_obsidian2.moment)(this.draft.due, "YYYY-MM-DD").toDate().toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }) : "\u671F\u65E5";
@@ -564,7 +681,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
       picker.value = this.draft.due;
     picker.addEventListener("change", () => {
       this.draft.due = picker.value || null;
-      this.render();
+      this.draw();
     });
     due.addEventListener("click", () => {
       try {
@@ -578,16 +695,18 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const text = this.draft.text.trim();
     if (!text)
       return;
-    const path = this.plugin.todoNotePath((0, import_obsidian2.moment)());
+    const path = this.plugin.todoNotePath();
+    this.awaitingIndex = path;
     try {
-      await appendLine(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
+      await addTodoToNote(this.app, path, formatTodoLine(text, this.draft.priority, this.draft.due));
     } catch (err) {
+      this.awaitingIndex = null;
       console.error(err);
       new import_obsidian2.Notice(`Todo\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F: ${path}`);
       return;
     }
     this.draft = { text: "", priority: null, due: null };
-    await this.render();
+    this.draw();
     this.todoInput()?.focus();
   }
   formatDue(due) {
@@ -607,8 +726,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
 // src/main.ts
 var DEFAULT_SETTINGS = {
   background: "paper",
-  todoFolder: "Todo",
-  todoFormat: ""
+  todoNote: "Todo.md"
 };
 var FILTER_HOST_ID = "pencil-dashboard-svg-defs";
 function ensureSvgDefs() {
@@ -683,10 +801,10 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
   }
-  /** Where a Todo added on `date` is written, laid out like the daily notes (e.g. Todo/2026/09/2026-09-27.md). */
-  todoNotePath(date) {
-    const format = this.settings.todoFormat.trim() || getDailyNoteSettings(this.app).format;
-    return datedNotePath(this.settings.todoFolder, format, date);
+  /** The Todo note's vault path; a bare name like "Tasks/Todo" gets its .md added. */
+  todoNotePath() {
+    const name = this.settings.todoNote.trim().replace(/^\/+|\/+$/g, "") || DEFAULT_SETTINGS.todoNote;
+    return /\.md$/i.test(name) ? name : `${name}.md`;
   }
   async setBackground(background) {
     this.settings.background = background;
@@ -720,24 +838,11 @@ var PencilDashboardSettingTab = class extends import_obsidian3.PluginSettingTab 
       dropdown.setValue(this.plugin.settings.background).onChange((value) => this.plugin.setBackground(value));
     });
     new import_obsidian3.Setting(containerEl).setName("Todo").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("\u4FDD\u5B58\u5148\u30D5\u30A9\u30EB\u30C0\u30FC").setDesc("\u30C0\u30C3\u30B7\u30E5\u30DC\u30FC\u30C9\u3067\u8FFD\u52A0\u3057\u305FTodo\u3092\u5165\u308C\u308B\u30D5\u30A9\u30EB\u30C0\u30FC\u3002\u7121\u3051\u308C\u3070\u81EA\u52D5\u3067\u4F5C\u308A\u307E\u3059\u3002").addText(
-      (text) => text.setPlaceholder("Todo").setValue(this.plugin.settings.todoFolder).onChange(async (value) => {
-        this.plugin.settings.todoFolder = value.trim();
+    new import_obsidian3.Setting(containerEl).setName("Todo\u30CE\u30FC\u30C8").setDesc("\u30C0\u30C3\u30B7\u30E5\u30DC\u30FC\u30C9\u3067\u8FFD\u52A0\u3057\u305FTodo\u3092\u66F8\u304F\u30CE\u30FC\u30C8\u3002\u300C\u9032\u884C\u4E2D\u300D\u300C\u5B8C\u4E86\u300D\u306E\u898B\u51FA\u3057\u3067\u5206\u3051\u3001\u7121\u3051\u308C\u3070\u81EA\u52D5\u3067\u4F5C\u308A\u307E\u3059\u3002").addText(
+      (text) => text.setPlaceholder(DEFAULT_SETTINGS.todoNote).setValue(this.plugin.settings.todoNote).onChange(async (value) => {
+        this.plugin.settings.todoNote = value.trim();
         await this.plugin.saveSettings();
-        updateExample();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u30CE\u30FC\u30C8\u540D\u306E\u66F8\u5F0F").setDesc(
-      "\u30C7\u30A4\u30EA\u30FC\u30CE\u30FC\u30C8\u3068\u540C\u3058\u66F8\u304D\u65B9\u3067\u3059\u3002\u7A7A\u6B04\u306A\u3089\u30C7\u30A4\u30EA\u30FC\u30CE\u30FC\u30C8\u306E\u66F8\u5F0F\u3068\u540C\u3058\u306B\u306A\u308A\u307E\u3059\uFF08\u4F8B: YYYY/MM/YYYY-MM-DD \u3067\u65E5\u3054\u3068\u3001YYYY/YYYY-MM \u3067\u6708\u3054\u3068\u3001[Inbox] \u30671\u3064\u306E\u30CE\u30FC\u30C8\u306B\u307E\u3068\u3081\u308B\uFF09\u3002"
-    ).addText(
-      (text) => text.setPlaceholder(getDailyNoteSettings(this.app).format).setValue(this.plugin.settings.todoFormat).onChange(async (value) => {
-        this.plugin.settings.todoFormat = value.trim();
-        await this.plugin.saveSettings();
-        updateExample();
-      })
-    );
-    const example = new import_obsidian3.Setting(containerEl).setName("\u4ECA\u65E5\u8FFD\u52A0\u3059\u308B\u3068");
-    const updateExample = () => example.setDesc(`${this.plugin.todoNotePath((0, import_obsidian3.moment)())} \u306E\u672B\u5C3E\u306B\u66F8\u304D\u8DB3\u3055\u308C\u307E\u3059\u3002`);
-    updateExample();
   }
 };
