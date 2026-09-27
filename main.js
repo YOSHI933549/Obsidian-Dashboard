@@ -91,6 +91,8 @@ async function collectTodos(app, limit) {
       const dueMatch = DUE_RE.exec(text);
       const due = dueMatch ? dueMatch[1] : null;
       text = text.replace(PRIORITY_RE, "").replace(DUE_RE, "").trim();
+      if (!text)
+        continue;
       todos.push({
         file,
         line: lineNo,

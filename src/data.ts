@@ -96,6 +96,8 @@ export async function collectTodos(app: App, limit: number): Promise<TodoItem[]>
       const dueMatch = DUE_RE.exec(text);
       const due = dueMatch ? dueMatch[1] : null;
       text = text.replace(PRIORITY_RE, "").replace(DUE_RE, "").trim();
+      // Blank checkboxes (e.g. left by a daily-note template) are placeholders, not tasks.
+      if (!text) continue;
 
       todos.push({
         file,
