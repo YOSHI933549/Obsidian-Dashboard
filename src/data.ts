@@ -18,9 +18,25 @@ export function getDailyNoteSettings(app: App): DailyNoteSettings {
   };
 }
 
+/** `folder/<date in format>.md`; a format like `YYYY/MM/YYYY-MM-DD` nests subfolders. */
+export function datedNotePath(folder: string, format: string, date: moment.Moment): string {
+  const filename = `${date.format(format)}.md`;
+  const cleanFolder = folder.trim().replace(/^\/+|\/+$/g, "");
+  return cleanFolder ? `${cleanFolder}/${filename}` : filename;
+}
+
 export function dailyNotePath(settings: DailyNoteSettings, date: moment.Moment): string {
-  const filename = `${date.format(settings.format)}.md`;
-  return settings.folder ? `${settings.folder}/${filename}` : filename;
+  return datedNotePath(settings.folder, settings.format, date);
+}
+
+/** Creates each missing folder on the way to `path`, since a date format like YYYY/MM/DD nests them. */
+export async function ensureParentFolder(app: App, path: string): Promise<void> {
+  const parts = path.split("/").slice(0, -1);
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    if (!app.vault.getAbstractFileByPath(current)) await app.vault.createFolder(current);
+  }
 }
 
 export function hasDailyNote(app: App, settings: DailyNoteSettings, date: moment.Moment): boolean {
@@ -112,6 +128,28 @@ export async function collectTodos(app: App, limit: number): Promise<TodoItem[]>
 
   todos.sort((a, b) => b.file.stat.mtime - a.file.stat.mtime);
   return todos.slice(0, limit);
+}
+
+/** Builds a checkbox line in the same `#high` / `📅 YYYY-MM-DD` syntax collectTodos reads back. */
+export function formatTodoLine(text: string, priority: "high" | "medium" | null, due: string | null): string {
+  const parts = [`- [ ] ${text.trim()}`];
+  if (priority) parts.push(`#${priority}`);
+  if (due) parts.push(`📅 ${due}`);
+  return parts.join(" ");
+}
+
+/** Appends a line to the note at `path`, creating the note and its folders when missing. */
+export async function appendLine(app: App, path: string, line: string): Promise<TFile> {
+  const existing = app.vault.getAbstractFileByPath(path);
+  if (existing instanceof TFile) {
+    await app.vault.process(existing, (content) => {
+      const base = content === "" || content.endsWith("\n") ? content : `${content}\n`;
+      return `${base}${line}\n`;
+    });
+    return existing;
+  }
+  await ensureParentFolder(app, path);
+  return app.vault.create(path, `${line}\n`);
 }
 
 /** Flips one checkbox in place by rewriting only its line. */

@@ -1,4 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Yomogi&family=Klee+One:wght@400;600&display=swap");
+/* Latin letters come from Kalam / Coming Soon (quick pencil handwriting), Japanese falls through to Klee One (pencil-written kana/kanji). */
+@import url("https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Coming+Soon&family=Klee+One:wght@400;600&display=swap");
 
 .pencil-dashboard-container {
   --pd-paper: #ece6d8;
@@ -10,7 +11,8 @@
   --pd-red: #c4553b;
   --pd-ochre: #c0842c;
   --pd-rule: rgba(91, 120, 168, 0.22);
-  --pd-hand: "Yomogi", "Klee One", "Hiragino Maru Gothic ProN", cursive;
+  --pd-hand: "Kalam", "Klee One", "Hiragino Maru Gothic ProN", cursive;
+  --pd-print: "Coming Soon", "Klee One", "Hiragino Maru Gothic ProN", cursive;
   --pd-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .33 0 0 0 0 .26 0 0 0 .18 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 
 }
@@ -102,6 +104,11 @@
   filter: url(#pd-grain);
 }
 
+/* Graphite grain and a slight wobble on the handwriting itself */
+.pd-root :is(h2, h3, .pd-greet, .pd-date, .pd-wd, .pd-n, .pd-fav span, .pd-search-placeholder, .pd-new-note, .pd-legend > span, .pd-todo-where, .pd-todo-text, .pd-due) {
+  filter: url(#pd-text);
+}
+
 .pd-muted {
   color: var(--pd-graphite-soft);
   font-size: 13px;
@@ -139,9 +146,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: "Klee One", var(--pd-hand);
-  font-weight: 600;
-  font-size: 36px;
+  font-family: var(--pd-print);
+  font-size: 38px;
 }
 
 .pd-search-row {
@@ -453,15 +459,100 @@
   height: 12px;
 }
 
-.pd-todo-list {
+.pd-todo-where {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: -6px;
+  font-size: 12px;
+  color: var(--pd-graphite-soft);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.pd-todo-where:hover {
+  color: var(--pd-graphite);
+  text-decoration: underline 1px;
+}
+
+.pd-todo-paper {
   --pd-lh: 38px;
   flex: 1;
-  min-height: calc(var(--pd-lh) * 8);
-  list-style: none;
+  display: flex;
+  flex-direction: column;
   margin: 4px -16px 0;
   padding: 0 16px 0 0;
   background: linear-gradient(90deg, transparent 28px, rgba(196, 85, 59, 0.45) 28px 29.5px, transparent 29.5px),
     repeating-linear-gradient(to bottom, transparent 0 calc(var(--pd-lh) - 1px), var(--pd-rule) calc(var(--pd-lh) - 1px) var(--pd-lh));
+}
+
+.pd-todo-list {
+  flex: 1;
+  min-height: calc(var(--pd-lh) * 7);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The first ruled line is where a new Todo gets written */
+.pd-todo-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--pd-lh);
+}
+
+.pd-todo-plus {
+  width: 28px;
+  height: 100%;
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--pd-red);
+}
+
+.pd-root .pd-todo-add .pd-todo-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--pd-graphite);
+  caret-color: var(--pd-red);
+}
+
+.pd-root .pd-todo-add .pd-todo-input::placeholder {
+  color: var(--pd-graphite-faint);
+}
+
+.pd-todo-opt {
+  --pd-line: var(--pd-graphite-faint);
+  color: var(--pd-graphite-soft);
+  height: 22px;
+  white-space: nowrap;
+}
+
+.pd-todo-due.is-set {
+  --pd-line: var(--pd-graphite-soft);
+  color: var(--pd-graphite);
+}
+
+/* Invisible real date input so the system picker has something to open */
+.pd-todo-due input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pd-todo-list li {
