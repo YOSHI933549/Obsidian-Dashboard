@@ -74,6 +74,8 @@
   border: 1.4px solid var(--pd-line, var(--pd-graphite));
   border-radius: var(--pd-r, 5px);
   filter: url(#pd-pencil);
+  /* Own layer, so the filter runs once instead of on every hover, keystroke or scroll nearby */
+  will-change: transform;
 }
 
 .pd-sk::after {
