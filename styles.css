@@ -1,5 +1,5 @@
-/* Latin letters come from Kalam / Coming Soon (quick pencil handwriting), Japanese falls through to Klee One (pencil-written kana/kanji). */
-@import url("https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Coming+Soon&family=Klee+One:wght@400;600&display=swap");
+/* Latin letters come from Kalam / Coming Soon (quick pencil handwriting), Japanese falls through to Klee One (pencil-written kana/kanji).
+   The fonts are linked by the view when a dashboard opens (see ensureFonts in main.ts), not imported here, so Obsidian starts without fetching them. */
 
 .pencil-dashboard-container {
   --pd-paper: #ece6d8;
