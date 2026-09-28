@@ -54,7 +54,7 @@ export async function dailyNoteContent(app: App, settings: DailyNoteSettings, da
     .replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
 }
 
-/** Adds `text` as its own line at the end of today's daily note, creating the note (from its template) if needed. */
+/** Adds `text` as a bullet at the end of today's daily note, creating the note (from its template) if needed. */
 export async function appendToDailyNote(app: App, text: string): Promise<TFile> {
   const settings = getDailyNoteSettings(app);
   const today = moment();
@@ -67,7 +67,11 @@ export async function appendToDailyNote(app: App, text: string): Promise<TFile> 
   const note = file as TFile;
   await app.vault.process(note, (content) => {
     const body = content.replace(/\s+$/, "");
-    return body ? `${body}\n\n${text}\n` : `${text}\n`;
+    const bullet = `- ${text}`;
+    if (!body) return `${bullet}\n`;
+    // Consecutive captures stay one list; after other text, a blank line starts a new one.
+    const lastLine = body.slice(body.lastIndexOf("\n") + 1);
+    return /^\s*[-*+] /.test(lastLine) ? `${body}\n${bullet}\n` : `${body}\n\n${bullet}\n`;
   });
   return note;
 }

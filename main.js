@@ -74,10 +74,16 @@ async function appendToDailyNote(app, text) {
   const note = file;
   await app.vault.process(note, (content) => {
     const body = content.replace(/\s+$/, "");
-    return body ? `${body}
+    const bullet = `- ${text}`;
+    if (!body)
+      return `${bullet}
+`;
+    const lastLine = body.slice(body.lastIndexOf("\n") + 1);
+    return /^\s*[-*+] /.test(lastLine) ? `${body}
+${bullet}
+` : `${body}
 
-${text}
-` : `${text}
+${bullet}
 `;
   });
   return note;

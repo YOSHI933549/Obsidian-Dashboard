@@ -1,6 +1,6 @@
 {
   "name": "pencil-dashboard",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "鉛筆で紙に描いたような見た目のObsidianホームダッシュボード",
   "private": true,
   "scripts": {
