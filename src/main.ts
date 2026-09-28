@@ -1,4 +1,5 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
+import { addTodoToNote, appendToDailyNote, formatTodoLine } from "./data";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
 import { Background, BACKGROUNDS } from "./backgrounds";
 import { removeFonts } from "./fonts";
@@ -79,6 +80,10 @@ export default class PencilDashboardPlugin extends Plugin {
 
     this.addRibbonIcon("pencil", "Open pencil dashboard", () => this.activateView());
 
+    // Voice capture: an iOS Shortcut opens obsidian://pencil-todo?text=… or obsidian://pencil-diary?text=…
+    this.registerObsidianProtocolHandler("pencil-todo", (params) => this.captureTodo(params.text));
+    this.registerObsidianProtocolHandler("pencil-diary", (params) => this.captureDiary(params.text));
+
     this.addCommand({
       id: "open-pencil-dashboard",
       name: "Open dashboard",
@@ -99,6 +104,30 @@ export default class PencilDashboardPlugin extends Plugin {
   todoNotePath(): string {
     const name = this.settings.todoNote.trim().replace(/^\/+|\/+$/g, "") || DEFAULT_SETTINGS.todoNote;
     return /\.md$/i.test(name) ? name : `${name}.md`;
+  }
+
+  private async captureTodo(text: string | undefined): Promise<void> {
+    const clean = text?.trim();
+    if (!clean) return;
+    try {
+      await addTodoToNote(this.app, this.todoNotePath(), formatTodoLine(clean, null, null));
+      new Notice(`Todoに追加しました: ${clean}`);
+    } catch (e) {
+      console.error(e);
+      new Notice("Todoを追加できませんでした");
+    }
+  }
+
+  private async captureDiary(text: string | undefined): Promise<void> {
+    const clean = text?.trim();
+    if (!clean) return;
+    try {
+      await appendToDailyNote(this.app, clean);
+      new Notice(`日記に追加しました: ${clean}`);
+    } catch (e) {
+      console.error(e);
+      new Notice("日記に追加できませんでした");
+    }
   }
 
   async setBackground(background: Background): Promise<void> {

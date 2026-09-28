@@ -24,24 +24,6 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian3 = require("obsidian");
 
-// src/view.ts
-var import_obsidian2 = require("obsidian");
-
-// src/fonts.ts
-var FONT_LINK_ID = "pencil-dashboard-fonts";
-function ensureFonts() {
-  if (document.getElementById(FONT_LINK_ID))
-    return;
-  const link = document.createElement("link");
-  link.id = FONT_LINK_ID;
-  link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Coming+Soon&family=Klee+One:wght@400;600&display=swap";
-  document.head.appendChild(link);
-}
-function removeFonts() {
-  document.getElementById(FONT_LINK_ID)?.remove();
-}
-
 // src/data.ts
 var import_obsidian = require("obsidian");
 function getDailyNoteSettings(app) {
@@ -69,6 +51,36 @@ async function ensureParentFolder(app, path) {
     if (!app.vault.getAbstractFileByPath(current))
       await app.vault.createFolder(current);
   }
+}
+async function dailyNoteContent(app, settings, date) {
+  if (!settings.template)
+    return "";
+  const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
+  const template = app.vault.getAbstractFileByPath(templatePath);
+  if (!(template instanceof import_obsidian.TFile))
+    return "";
+  const now = (0, import_obsidian.moment)();
+  return (await app.vault.read(template)).replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt) => date.format(fmt)).replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt) => now.format(fmt)).replace(/{{\s*date\s*}}/gi, date.format(settings.format)).replace(/{{\s*time\s*}}/gi, now.format("HH:mm")).replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
+}
+async function appendToDailyNote(app, text) {
+  const settings = getDailyNoteSettings(app);
+  const today = (0, import_obsidian.moment)();
+  const path = dailyNotePath(settings, today);
+  let file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof import_obsidian.TFile)) {
+    await ensureParentFolder(app, path);
+    file = await app.vault.create(path, await dailyNoteContent(app, settings, today));
+  }
+  const note = file;
+  await app.vault.process(note, (content) => {
+    const body = content.replace(/\s+$/, "");
+    return body ? `${body}
+
+${text}
+` : `${text}
+`;
+  });
+  return note;
 }
 function hasDailyNote(app, settings, date) {
   return !!app.vault.getAbstractFileByPath(dailyNotePath(settings, date));
@@ -243,6 +255,24 @@ async function setTodoDone(app, todo, done, todoNotePath) {
     return lines.join("\n");
   });
   return written;
+}
+
+// src/view.ts
+var import_obsidian2 = require("obsidian");
+
+// src/fonts.ts
+var FONT_LINK_ID = "pencil-dashboard-fonts";
+function ensureFonts() {
+  if (document.getElementById(FONT_LINK_ID))
+    return;
+  const link = document.createElement("link");
+  link.id = FONT_LINK_ID;
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Coming+Soon&family=Klee+One:wght@400;600&display=swap";
+  document.head.appendChild(link);
+}
+function removeFonts() {
+  document.getElementById(FONT_LINK_ID)?.remove();
 }
 
 // src/icons.ts
@@ -585,22 +615,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
         return;
       }
       await ensureParentFolder(this.app, path);
-      file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
+      file = await this.app.vault.create(path, await dailyNoteContent(this.app, settings, date));
     }
     if (file instanceof import_obsidian2.TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     }
-  }
-  /** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
-  async dailyNoteContent(settings, date) {
-    if (!settings.template)
-      return "";
-    const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
-    const template = this.app.vault.getAbstractFileByPath(templatePath);
-    if (!(template instanceof import_obsidian2.TFile))
-      return "";
-    const now = (0, import_obsidian2.moment)();
-    return (await this.app.vault.read(template)).replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt) => date.format(fmt)).replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt) => now.format(fmt)).replace(/{{\s*date\s*}}/gi, date.format(settings.format)).replace(/{{\s*time\s*}}/gi, now.format("HH:mm")).replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
   }
   renderActivity(card, counts) {
     card.createEl("h2", { text: "Activity" });
@@ -870,6 +889,8 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
     });
     this.registerView(VIEW_TYPE_PENCIL_DASHBOARD, (leaf) => new DashboardView(leaf, this));
     this.addRibbonIcon("pencil", "Open pencil dashboard", () => this.activateView());
+    this.registerObsidianProtocolHandler("pencil-todo", (params) => this.captureTodo(params.text));
+    this.registerObsidianProtocolHandler("pencil-diary", (params) => this.captureDiary(params.text));
     this.addCommand({
       id: "open-pencil-dashboard",
       name: "Open dashboard",
@@ -887,6 +908,30 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
   todoNotePath() {
     const name = this.settings.todoNote.trim().replace(/^\/+|\/+$/g, "") || DEFAULT_SETTINGS.todoNote;
     return /\.md$/i.test(name) ? name : `${name}.md`;
+  }
+  async captureTodo(text) {
+    const clean = text?.trim();
+    if (!clean)
+      return;
+    try {
+      await addTodoToNote(this.app, this.todoNotePath(), formatTodoLine(clean, null, null));
+      new import_obsidian3.Notice(`Todo\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F: ${clean}`);
+    } catch (e) {
+      console.error(e);
+      new import_obsidian3.Notice("Todo\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    }
+  }
+  async captureDiary(text) {
+    const clean = text?.trim();
+    if (!clean)
+      return;
+    try {
+      await appendToDailyNote(this.app, clean);
+      new import_obsidian3.Notice(`\u65E5\u8A18\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F: ${clean}`);
+    } catch (e) {
+      console.error(e);
+      new import_obsidian3.Notice("\u65E5\u8A18\u306B\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    }
   }
   async setBackground(background) {
     this.settings.background = background;

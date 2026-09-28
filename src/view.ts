@@ -13,6 +13,7 @@ import {
   DailyNoteSettings,
   FavoriteItem,
   ensureParentFolder,
+  dailyNoteContent,
   formatTodoLine,
   addTodoToNote,
   ACTIVE_HEADING,
@@ -376,27 +377,14 @@ export class DashboardView extends ItemView {
         return;
       }
       await ensureParentFolder(this.app, path);
-      file = await this.app.vault.create(path, await this.dailyNoteContent(settings, date));
+      file = await this.app.vault.create(path, await dailyNoteContent(this.app, settings, date));
     }
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     }
   }
 
-  /** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
-  private async dailyNoteContent(settings: DailyNoteSettings, date: moment.Moment): Promise<string> {
-    if (!settings.template) return "";
-    const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
-    const template = this.app.vault.getAbstractFileByPath(templatePath);
-    if (!(template instanceof TFile)) return "";
-    const now = moment();
-    return (await this.app.vault.read(template))
-      .replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => date.format(fmt))
-      .replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => now.format(fmt))
-      .replace(/{{\s*date\s*}}/gi, date.format(settings.format))
-      .replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
-      .replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
-  }
+
 
   private renderActivity(card: HTMLElement, counts: number[]): void {
     card.createEl("h2", { text: "Activity" });
