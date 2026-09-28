@@ -1,6 +1,7 @@
 import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
 import { DashboardView, VIEW_TYPE_PENCIL_DASHBOARD } from "./view";
 import { Background, BACKGROUNDS } from "./backgrounds";
+import { removeFonts } from "./fonts";
 
 interface PencilDashboardSettings {
   background: Background;
@@ -14,7 +15,6 @@ const DEFAULT_SETTINGS: PencilDashboardSettings = {
 };
 
 const FILTER_HOST_ID = "pencil-dashboard-svg-defs";
-
 /** Injects the shared SVG filters/pattern once per window; CSS `filter: url(#pd-pencil)` needs them in the DOM. */
 function ensureSvgDefs(): void {
   if (document.getElementById(FILTER_HOST_ID)) return;
@@ -88,6 +88,7 @@ export default class PencilDashboardPlugin extends Plugin {
 
   onunload(): void {
     document.getElementById(FILTER_HOST_ID)?.remove();
+    removeFonts();
   }
 
   async saveSettings(): Promise<void> {

@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile, Notice, moment } from "obsidian";
 import type PencilDashboardPlugin from "./main";
+import { ensureFonts } from "./fonts";
 import {
   getDailyNoteSettings,
   hasDailyNote,
@@ -33,16 +34,11 @@ type CardName = "calendar" | "activity" | "favorites" | "todo";
 const ACTIVE_LIMIT = 60;
 const DONE_LIMIT = 5;
 
-const QUICK_ACTIONS: { icon: Parameters<typeof iconSvg>[0]; title: string; command?: string }[] = [
+/** Only shortcuts that do something; "New note" already sits next to the search box. */
+const QUICK_ACTIONS: { icon: Parameters<typeof iconSvg>[0]; title: string; command?: string; today?: true }[] = [
   { icon: "folder", title: "Files", command: "file-explorer:open" },
-  { icon: "file-text", title: "New note", command: "file-explorer:new-file" },
-  { icon: "pen", title: "Drawings" },
+  { icon: "calendar", title: "Today's daily note", today: true },
   { icon: "layout", title: "Canvas", command: "canvas:new-file" },
-  { icon: "db", title: "Bases" },
-  { icon: "image", title: "Images" },
-  { icon: "music", title: "Audio" },
-  { icon: "file-down", title: "PDF" },
-  { icon: "file", title: "Other files" },
 ];
 
 /**
@@ -70,6 +66,7 @@ export class DashboardView extends ItemView {
   private todos: TodoItem[] = [];
   private refreshHandle: number | null = null;
   private clockHandle: number | null = null;
+  private closed = false;
   /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
   private awaitingIndex: string | null = null;
   /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
@@ -106,6 +103,14 @@ export class DashboardView extends ItemView {
   async onOpen(): Promise<void> {
     this.containerEl.addClass("pencil-dashboard-container");
     this.applyBackground();
+    ensureFonts();
+    // While Obsidian is starting it loads and indexes every note (firing create/changed for each);
+    // a dashboard restored with the workspace waits for that to finish before reading the vault.
+    this.app.workspace.onLayoutReady(() => this.start());
+  }
+
+  private async start(): Promise<void> {
+    if (this.closed) return;
     await this.render();
 
     this.clockHandle = window.setInterval(() => {
@@ -138,6 +143,7 @@ export class DashboardView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.closed = true;
     if (this.refreshHandle) window.clearTimeout(this.refreshHandle);
   }
 
@@ -312,7 +318,9 @@ export class DashboardView extends ItemView {
     for (const action of QUICK_ACTIONS) {
       const btn = pdButton(quick, { cls: "pd-sk pd-shade", attr: { title: action.title } });
       btn.innerHTML = iconSvg(action.icon);
-      if (action.command) {
+      if (action.today) {
+        btn.addEventListener("click", () => this.openOrCreateDailyNote(moment(), getDailyNoteSettings(this.app)));
+      } else if (action.command) {
         btn.addEventListener("click", () => this.runCommand(action.command as string));
       }
     }

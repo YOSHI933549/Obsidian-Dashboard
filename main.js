@@ -27,6 +27,21 @@ var import_obsidian3 = require("obsidian");
 // src/view.ts
 var import_obsidian2 = require("obsidian");
 
+// src/fonts.ts
+var FONT_LINK_ID = "pencil-dashboard-fonts";
+function ensureFonts() {
+  if (document.getElementById(FONT_LINK_ID))
+    return;
+  const link = document.createElement("link");
+  link.id = FONT_LINK_ID;
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Coming+Soon&family=Klee+One:wght@400;600&display=swap";
+  document.head.appendChild(link);
+}
+function removeFonts() {
+  document.getElementById(FONT_LINK_ID)?.remove();
+}
+
 // src/data.ts
 var import_obsidian = require("obsidian");
 function getDailyNoteSettings(app) {
@@ -235,13 +250,8 @@ var ICON_PATHS = {
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
   folder: '<path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5h-7L10 5H4.5A1.5 1.5 0 0 0 3 6.5z"/>',
   "file-text": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
-  pen: '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><path d="m14.5 5.5 3 3"/>',
   layout: '<rect x="3" y="3" width="7" height="8" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="6" rx="1"/>',
-  db: '<ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5v13c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-13M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/>',
-  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5L5 20"/>',
-  music: '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
-  "file-down": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6m-2.5-2.5L12 17l2.5-2.5"/>',
-  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8.5 14.5h2M13.5 14.5h2M8.5 17.5h2"/>',
   sort: '<path d="M7 4v16M4 7l3-3 3 3M17 20V4m-3 13 3 3 3-3"/>',
   check: '<path d="M3 11l4.5 5L18 2"/>'
 };
@@ -277,14 +287,8 @@ var ACTIVE_LIMIT = 60;
 var DONE_LIMIT = 5;
 var QUICK_ACTIONS = [
   { icon: "folder", title: "Files", command: "file-explorer:open" },
-  { icon: "file-text", title: "New note", command: "file-explorer:new-file" },
-  { icon: "pen", title: "Drawings" },
-  { icon: "layout", title: "Canvas", command: "canvas:new-file" },
-  { icon: "db", title: "Bases" },
-  { icon: "image", title: "Images" },
-  { icon: "music", title: "Audio" },
-  { icon: "file-down", title: "PDF" },
-  { icon: "file", title: "Other files" }
+  { icon: "calendar", title: "Today's daily note", today: true },
+  { icon: "layout", title: "Canvas", command: "canvas:new-file" }
 ];
 function pdButton(parent, info) {
   const el = parent.createDiv(info);
@@ -308,6 +312,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.todos = [];
     this.refreshHandle = null;
     this.clockHandle = null;
+    this.closed = false;
     /** A note this view just wrote; it redraws as soon as Obsidian has re-read it, not after the usual pause. */
     this.awaitingIndex = null;
     /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
@@ -337,6 +342,12 @@ var DashboardView = class extends import_obsidian2.ItemView {
   async onOpen() {
     this.containerEl.addClass("pencil-dashboard-container");
     this.applyBackground();
+    ensureFonts();
+    this.app.workspace.onLayoutReady(() => this.start());
+  }
+  async start() {
+    if (this.closed)
+      return;
     await this.render();
     this.clockHandle = window.setInterval(() => {
       if (this.isVisible())
@@ -366,6 +377,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
   }
   async onClose() {
+    this.closed = true;
     if (this.refreshHandle)
       window.clearTimeout(this.refreshHandle);
   }
@@ -516,7 +528,9 @@ var DashboardView = class extends import_obsidian2.ItemView {
     for (const action of QUICK_ACTIONS) {
       const btn = pdButton(quick, { cls: "pd-sk pd-shade", attr: { title: action.title } });
       btn.innerHTML = iconSvg(action.icon);
-      if (action.command) {
+      if (action.today) {
+        btn.addEventListener("click", () => this.openOrCreateDailyNote((0, import_obsidian2.moment)(), getDailyNoteSettings(this.app)));
+      } else if (action.command) {
         btn.addEventListener("click", () => this.runCommand(action.command));
       }
     }
@@ -864,6 +878,7 @@ var PencilDashboardPlugin = class extends import_obsidian3.Plugin {
   }
   onunload() {
     document.getElementById(FILTER_HOST_ID)?.remove();
+    removeFonts();
   }
   async saveSettings() {
     await this.saveData(this.settings);
