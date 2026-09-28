@@ -312,6 +312,11 @@ var DashboardView = class extends import_obsidian2.ItemView {
     this.awaitingIndex = null;
     /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
     this.stale = false;
+    /**
+     * Each card is only rebuilt when what it shows has changed: rebuilding a card makes the browser
+     * re-run every pencil filter inside it, which is the expensive part of the dashboard.
+     */
+    this.cards = {};
     /** The Todo being written survives redraws (every vault change re-renders the whole view). */
     this.draft = {
       text: "",
@@ -401,8 +406,50 @@ var DashboardView = class extends import_obsidian2.ItemView {
   }
   /** Redraws from the Todos already read; right after a write the metadata cache still has the old line numbers. */
   draw() {
+    if (!this.cards.todo?.el.isConnected)
+      this.build();
+    const settings = getDailyNoteSettings(this.app);
+    const today = (0, import_obsidian2.moment)().startOf("day");
+    const calendarKey = [
+      this.viewMonth.format("YYYY-MM"),
+      today.format("YYYY-MM-DD"),
+      this.calendarDates().map((d) => hasDailyNote(this.app, settings, d) ? "1" : "0").join("")
+    ].join("|");
+    this.updateCard("calendar", calendarKey, (card) => this.renderCalendar(card));
+    const counts = buildActivity(this.app, ACTIVITY_WEEKS * 7);
+    this.updateCard("activity", counts.join(","), (card) => this.renderActivity(card, counts));
+    const favs = collectFavorites(this.app);
+    this.updateCard("favorites", JSON.stringify(favs), (card) => this.renderFavorites(card, favs));
+    const todoKey = JSON.stringify([
+      this.sortBy,
+      this.draft.priority,
+      this.draft.due,
+      this.plugin.todoNotePath(),
+      this.todos.map((t) => [t.file.path, t.line, t.raw, t.checked])
+    ]);
     const input = this.todoInput();
     const refocusTodo = !!input && input.ownerDocument.activeElement === input;
+    this.updateCard("todo", todoKey, (card) => {
+      this.renderTodo(card);
+      if (refocusTodo)
+        this.todoInput()?.focus();
+    });
+  }
+  forceRedraw(name) {
+    const card = this.cards[name];
+    if (card)
+      card.key = "!";
+  }
+  updateCard(name, key, fill) {
+    const card = this.cards[name];
+    if (!card || card.key === key)
+      return;
+    card.el.empty();
+    fill(card.el);
+    card.key = key;
+  }
+  /** The parts that never change with the vault: tabs, logo, search, and the empty cards. */
+  build() {
     this.contentEl.empty();
     this.contentEl.addClass("pd-surface");
     const root = this.contentEl.createDiv({ cls: "pd-root" });
@@ -423,12 +470,20 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const col2 = grid.createDiv({ cls: "pd-col" });
     col1.createDiv({ cls: "pd-card pd-sk pd-clock", attr: { id: "pd-clock" } });
     this.renderClock();
-    this.renderCalendar(col1.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderActivity(col2.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderFavorites(col2.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderTodo(grid.createDiv({ cls: "pd-card pd-sk pd-todo" }));
-    if (refocusTodo)
-      this.todoInput()?.focus();
+    this.cards = {
+      calendar: { el: col1.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      activity: { el: col2.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      favorites: { el: col2.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      todo: { el: grid.createDiv({ cls: "pd-card pd-sk pd-todo" }), key: "!" }
+    };
+  }
+  /** The days shown for `viewMonth`, Monday-first, padded to whole weeks. */
+  calendarDates() {
+    const first = this.viewMonth.clone().startOf("month");
+    const offset = (first.day() + 6) % 7;
+    const cells = Math.ceil((offset + first.daysInMonth()) / 7) * 7;
+    const start = first.clone().subtract(offset, "days");
+    return Array.from({ length: cells }, (_, i) => start.clone().add(i, "days"));
   }
   renderClock() {
     const card = this.contentEl.querySelector("#pd-clock");
@@ -493,13 +548,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
       grid.createDiv({ cls: "pd-wd", text: w });
     const settings = getDailyNoteSettings(this.app);
     const today = (0, import_obsidian2.moment)().startOf("day");
-    const first = this.viewMonth.clone().startOf("month");
-    const offset = (first.day() + 6) % 7;
-    const daysInMonth = first.daysInMonth();
-    const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
-    const start = first.clone().subtract(offset, "days");
-    for (let i = 0; i < cells; i++) {
-      const date = start.clone().add(i, "days");
+    for (const date of this.calendarDates()) {
       const day = pdButton(grid, { cls: "pd-day pd-shade" });
       if (date.month() !== this.viewMonth.month())
         day.addClass("out");
@@ -539,10 +588,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
     const now = (0, import_obsidian2.moment)();
     return (await this.app.vault.read(template)).replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt) => date.format(fmt)).replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt) => now.format(fmt)).replace(/{{\s*date\s*}}/gi, date.format(settings.format)).replace(/{{\s*time\s*}}/gi, now.format("HH:mm")).replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
   }
-  renderActivity(card) {
+  renderActivity(card, counts) {
     card.createEl("h2", { text: "Activity" });
-    const days = ACTIVITY_WEEKS * 7;
-    const counts = buildActivity(this.app, days);
     const max = Math.max(1, ...counts);
     const heat = card.createDiv({ cls: "pd-heat" });
     for (let col = 0; col < ACTIVITY_WEEKS; col++) {
@@ -559,9 +606,8 @@ var DashboardView = class extends import_obsidian2.ItemView {
       sw.createDiv({ cls: l ? `pd-cell pd-l${l}` : "pd-cell" });
     legend.createSpan({ text: "More" });
   }
-  renderFavorites(card) {
+  renderFavorites(card, favs) {
     card.createEl("h2", { text: "Favorite" });
-    const favs = collectFavorites(this.app);
     const box = card.createDiv({ cls: "pd-favs" });
     if (favs.length === 0) {
       box.createEl("p", { cls: "pd-muted", text: "\u30B3\u30A2\u30D7\u30E9\u30B0\u30A4\u30F3\u300C\u304A\u6C17\u306B\u5165\u308A\u300D\u3067\u767B\u9332\u3057\u305F\u30CE\u30FC\u30C8\u304C\u3053\u3053\u306B\u4E26\u3073\u307E\u3059\u3002" });
@@ -660,6 +706,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
     if (written)
       return;
     this.awaitingIndex = null;
+    this.forceRedraw("todo");
     new import_obsidian2.Notice("\u3053\u306ETodo\u306F\u30CE\u30FC\u30C8\u306E\u4E2D\u3067\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F");
     await this.render();
   }
@@ -725,6 +772,7 @@ var DashboardView = class extends import_obsidian2.ItemView {
       return;
     }
     this.draft = { text: "", priority: null, due: null };
+    this.forceRedraw("todo");
     this.draw();
     this.todoInput()?.focus();
   }
