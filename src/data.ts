@@ -39,6 +39,39 @@ export async function ensureParentFolder(app: App, path: string): Promise<void> 
   }
 }
 
+/** Fills the daily-notes template with the same {{date}}/{{time}}/{{title}} tokens the core plugin supports. */
+export async function dailyNoteContent(app: App, settings: DailyNoteSettings, date: moment.Moment): Promise<string> {
+  if (!settings.template) return "";
+  const templatePath = settings.template.endsWith(".md") ? settings.template : `${settings.template}.md`;
+  const template = app.vault.getAbstractFileByPath(templatePath);
+  if (!(template instanceof TFile)) return "";
+  const now = moment();
+  return (await app.vault.read(template))
+    .replace(/{{\s*date\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => date.format(fmt))
+    .replace(/{{\s*time\s*:\s*(.+?)\s*}}/gi, (_, fmt: string) => now.format(fmt))
+    .replace(/{{\s*date\s*}}/gi, date.format(settings.format))
+    .replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
+    .replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
+}
+
+/** Adds `text` as its own line at the end of today's daily note, creating the note (from its template) if needed. */
+export async function appendToDailyNote(app: App, text: string): Promise<TFile> {
+  const settings = getDailyNoteSettings(app);
+  const today = moment();
+  const path = dailyNotePath(settings, today);
+  let file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) {
+    await ensureParentFolder(app, path);
+    file = await app.vault.create(path, await dailyNoteContent(app, settings, today));
+  }
+  const note = file as TFile;
+  await app.vault.process(note, (content) => {
+    const body = content.replace(/\s+$/, "");
+    return body ? `${body}\n\n${text}\n` : `${text}\n`;
+  });
+  return note;
+}
+
 export function hasDailyNote(app: App, settings: DailyNoteSettings, date: moment.Moment): boolean {
   return !!app.vault.getAbstractFileByPath(dailyNotePath(settings, date));
 }
