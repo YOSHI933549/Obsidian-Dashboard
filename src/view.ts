@@ -10,6 +10,7 @@ import {
   setTodoDone,
   TodoItem,
   DailyNoteSettings,
+  FavoriteItem,
   ensureParentFolder,
   formatTodoLine,
   addTodoToNote,
@@ -27,6 +28,8 @@ const MONTHS = [
 ];
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const ACTIVITY_WEEKS = 20;
+
+type CardName = "calendar" | "activity" | "favorites" | "todo";
 const ACTIVE_LIMIT = 60;
 const DONE_LIMIT = 5;
 
@@ -71,6 +74,11 @@ export class DashboardView extends ItemView {
   private awaitingIndex: string | null = null;
   /** Vault changes seen while the dashboard was hidden; it redraws once when shown again. */
   private stale = false;
+  /**
+   * Each card is only rebuilt when what it shows has changed: rebuilding a card makes the browser
+   * re-run every pencil filter inside it, which is the expensive part of the dashboard.
+   */
+  private cards: Partial<Record<CardName, { el: HTMLElement; key: string }>> = {};
   /** The Todo being written survives redraws (every vault change re-renders the whole view). */
   private draft: { text: string; priority: "high" | "medium" | null; due: string | null } = {
     text: "",
@@ -174,9 +182,55 @@ export class DashboardView extends ItemView {
 
   /** Redraws from the Todos already read; right after a write the metadata cache still has the old line numbers. */
   private draw(): void {
+    if (!this.cards.todo?.el.isConnected) this.build();
+
+    const settings = getDailyNoteSettings(this.app);
+    const today = moment().startOf("day");
+    const calendarKey = [
+      this.viewMonth.format("YYYY-MM"),
+      today.format("YYYY-MM-DD"),
+      this.calendarDates()
+        .map((d) => (hasDailyNote(this.app, settings, d) ? "1" : "0"))
+        .join(""),
+    ].join("|");
+    this.updateCard("calendar", calendarKey, (card) => this.renderCalendar(card));
+
+    const counts = buildActivity(this.app, ACTIVITY_WEEKS * 7);
+    this.updateCard("activity", counts.join(","), (card) => this.renderActivity(card, counts));
+
+    const favs = collectFavorites(this.app);
+    this.updateCard("favorites", JSON.stringify(favs), (card) => this.renderFavorites(card, favs));
+
+    const todoKey = JSON.stringify([
+      this.sortBy,
+      this.draft.priority,
+      this.draft.due,
+      this.plugin.todoNotePath(),
+      this.todos.map((t) => [t.file.path, t.line, t.raw, t.checked]),
+    ]);
     const input = this.todoInput();
     const refocusTodo = !!input && input.ownerDocument.activeElement === input;
+    this.updateCard("todo", todoKey, (card) => {
+      this.renderTodo(card);
+      if (refocusTodo) this.todoInput()?.focus();
+    });
+  }
 
+  private forceRedraw(name: CardName): void {
+    const card = this.cards[name];
+    if (card) card.key = "!";
+  }
+
+  private updateCard(name: CardName, key: string, fill: (card: HTMLElement) => void): void {
+    const card = this.cards[name];
+    if (!card || card.key === key) return;
+    card.el.empty();
+    fill(card.el);
+    card.key = key;
+  }
+
+  /** The parts that never change with the vault: tabs, logo, search, and the empty cards. */
+  private build(): void {
     this.contentEl.empty();
     this.contentEl.addClass("pd-surface");
     const root = this.contentEl.createDiv({ cls: "pd-root" });
@@ -202,12 +256,22 @@ export class DashboardView extends ItemView {
     col1.createDiv({ cls: "pd-card pd-sk pd-clock", attr: { id: "pd-clock" } });
     this.renderClock();
 
-    this.renderCalendar(col1.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderActivity(col2.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderFavorites(col2.createDiv({ cls: "pd-card pd-sk" }));
-    this.renderTodo(grid.createDiv({ cls: "pd-card pd-sk pd-todo" }));
+    // A "!" key never matches, so draw() fills every card the first time.
+    this.cards = {
+      calendar: { el: col1.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      activity: { el: col2.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      favorites: { el: col2.createDiv({ cls: "pd-card pd-sk" }), key: "!" },
+      todo: { el: grid.createDiv({ cls: "pd-card pd-sk pd-todo" }), key: "!" },
+    };
+  }
 
-    if (refocusTodo) this.todoInput()?.focus();
+  /** The days shown for `viewMonth`, Monday-first, padded to whole weeks. */
+  private calendarDates(): moment.Moment[] {
+    const first = this.viewMonth.clone().startOf("month");
+    const offset = (first.day() + 6) % 7;
+    const cells = Math.ceil((offset + first.daysInMonth()) / 7) * 7;
+    const start = first.clone().subtract(offset, "days");
+    return Array.from({ length: cells }, (_, i) => start.clone().add(i, "days"));
   }
 
   private renderClock(): void {
@@ -283,14 +347,7 @@ export class DashboardView extends ItemView {
 
     const settings = getDailyNoteSettings(this.app);
     const today = moment().startOf("day");
-    const first = this.viewMonth.clone().startOf("month");
-    const offset = (first.day() + 6) % 7;
-    const daysInMonth = first.daysInMonth();
-    const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
-    const start = first.clone().subtract(offset, "days");
-
-    for (let i = 0; i < cells; i++) {
-      const date = start.clone().add(i, "days");
+    for (const date of this.calendarDates()) {
       const day = pdButton(grid, { cls: "pd-day pd-shade" });
       if (date.month() !== this.viewMonth.month()) day.addClass("out");
       if (date.isSame(today, "day")) day.addClass("today");
@@ -333,10 +390,8 @@ export class DashboardView extends ItemView {
       .replace(/{{\s*title\s*}}/gi, date.format(settings.format).split("/").pop() ?? "");
   }
 
-  private renderActivity(card: HTMLElement): void {
+  private renderActivity(card: HTMLElement, counts: number[]): void {
     card.createEl("h2", { text: "Activity" });
-    const days = ACTIVITY_WEEKS * 7;
-    const counts = buildActivity(this.app, days);
     const max = Math.max(1, ...counts);
 
     const heat = card.createDiv({ cls: "pd-heat" });
@@ -355,9 +410,8 @@ export class DashboardView extends ItemView {
     legend.createSpan({ text: "More" });
   }
 
-  private renderFavorites(card: HTMLElement): void {
+  private renderFavorites(card: HTMLElement, favs: FavoriteItem[]): void {
     card.createEl("h2", { text: "Favorite" });
-    const favs = collectFavorites(this.app);
     const box = card.createDiv({ cls: "pd-favs" });
     if (favs.length === 0) {
       box.createEl("p", { cls: "pd-muted", text: "コアプラグイン「お気に入り」で登録したノートがここに並びます。" });
@@ -463,6 +517,8 @@ export class DashboardView extends ItemView {
     }
     if (written) return;
     this.awaitingIndex = null;
+    // The box was ticked on screen before the write; the unchanged Todo list must still redraw to undo it.
+    this.forceRedraw("todo");
     new Notice("このTodoはノートの中で見つかりませんでした");
     await this.render();
   }
@@ -533,6 +589,7 @@ export class DashboardView extends ItemView {
       return;
     }
     this.draft = { text: "", priority: null, due: null };
+    this.forceRedraw("todo");
     // The new Todo appears once Obsidian has re-read the note; until then only the field is cleared.
     this.draw();
     this.todoInput()?.focus();
